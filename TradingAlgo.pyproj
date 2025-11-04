@@ -1,0 +1,91 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>501e9449-2deb-40f7-ab18-abb8a953e303</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>run\backtest.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>TradingAlgo</Name>
+    <RootNamespace>TradingAlgo</RootNamespace>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
+    <Environment>ALPACA_API_KEY=PKC97DAQD5X69L8H4IUT
+ALPACA_SECRET_KEY=h47EqwPgsoynDzkcvjknb3UaWnJvKdFKobMNXmSF
+ALPHA_VANTAGE_KEY=OESSVQEB5B958WA9
+NEWS_API_KEY=d55ded5ee2014b8c9b50c7e81ef48dc6</Environment>
+    <IsWindowsApplication>False</IsWindowsApplication>
+    <TestFramework>unittest</TestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="backtester.py" />
+    <Compile Include="check_opening_bar.py" />
+    <Compile Include="cli_common.py" />
+    <Compile Include="config.py" />
+    <Compile Include="config\__init__.py" />
+    <Compile Include="config_loader.py" />
+    <Compile Include="core\__init__.py" />
+    <Compile Include="data_handler\api.py" />
+    <Compile Include="data_handler\gap_calculator.py" />
+    <Compile Include="data_handler\local.py" />
+    <Compile Include="data_handler\validators.py" />
+    <Compile Include="news\backtest.py" />
+    <Compile Include="news\live.py" />
+    <Compile Include="main.py" />
+    <Compile Include="market_context\backtest.py" />
+    <Compile Include="market_context\live.py" />
+    <Compile Include="market_context\scoring.py" />
+    <Compile Include="monitor.py" />
+    <Compile Include="pattern_analyzer.py" />
+    <Compile Include="python data_handler\local.py" />
+    <Compile Include="python run\backtest.py" />
+    <Compile Include="python tests\test_data_handler_local.py" />
+    <Compile Include="risk_manager.py" />
+    <Compile Include="run\backtest.py" />
+    <Compile Include="run\live.py" />
+    <Compile Include="screener\backtest.py" />
+    <Compile Include="screener\live.py" />
+    <Compile Include="screener\rules.py" />
+    <Compile Include="tests\test_data_handler_local.py" />
+    <Compile Include="trade_executor.py" />
+    <Compile Include="utils.py" />
+    <Compile Include="utils\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="config\" />
+    <Folder Include="core\" />
+    <Folder Include="market_context\" />
+    <Folder Include="data_handler\" />
+    <Folder Include="python data_handler\" />
+    <Folder Include="python run\" />
+    <Folder Include="python tests\" />
+    <Folder Include="run\" />
+    <Folder Include="news\" />
+    <Folder Include="screener\" />
+    <Folder Include="tests\" />
+    <Folder Include="utils\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="python" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>

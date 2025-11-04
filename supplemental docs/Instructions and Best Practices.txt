@@ -1,0 +1,307 @@
+AI Instructions: Parabolic Momentum Trading Algorithm for Python/VS Code with Alpaca API
+System Overview
+Create a Python-based automated trading algorithm using Visual Studio Code and Alpaca's API that specializes in parabolic momentum moves. This system leverages the flexibility of Python's ecosystem with Alpaca's comprehensive trading API to replicate human trader decision-making proven successful with extreme gappers (200%+ moves).
+Technical Foundation and Environment Setup
+Development Environment Configuration
+IDE: Visual Studio Code with Python extension
+Python Version: 3.8+ (for optimal library compatibility)
+Primary API: Alpaca Trading API (paper and live trading capabilities)
+Data Sources: Alpaca Market Data API, supplemented with additional sources as needed
+Architecture: Modular Python application with separate classes for each major function
+Required Python Libraries and Dependencies
+Research and implement these key libraries (verify compatibility and functionality):
+alpaca-trade-api: Primary trading and market data interface
+pandas: Data manipulation and analysis for screening and pattern recognition
+numpy: Mathematical calculations for technical indicators and risk management
+requests: HTTP requests for additional data sources and news feeds
+schedule: Task scheduling for continuous market monitoring
+logging: Comprehensive system logging and error tracking
+sqlite3 or postgresql: Local database for trade history and performance tracking
+yfinance or alternative: Supplementary market data if needed
+beautifulsoup4: Web scraping for news if direct feeds unavailable
+datetime/timezone: Proper time handling for market hours and data timestamps
+Project Structure and Organization
+Design a modular codebase with clear separation of concerns:
+config.py: All configuration parameters, API keys, and system settings
+data_handler.py: Market data retrieval, processing, and validation
+screener.py: Stock filtering and ranking logic
+pattern_analyzer.py: Momentum pattern recognition algorithms
+risk_manager.py: Position sizing, stop losses, and risk controls
+trade_executor.py: Order placement and execution management
+monitor.py: Performance tracking and system health monitoring
+main.py: Main application loop and orchestration
+utils.py: Helper functions and common utilities
+tests/: Comprehensive unit and integration tests
+Alpaca API Integration and Capabilities Research
+Critical API Capability Validation
+Before coding, thoroughly research and document Alpaca's specific capabilities:
+Market Data Access:
+Verify real-time data availability and latency
+Confirm pre-market data access (critical for strategy)
+Test historical data retrieval for backtesting
+Understand data rate limits and subscription requirements
+Validate accuracy of volume, price, and corporate action data
+Trading Functionality:
+Document all supported order types (market, limit, stop, stop-limit, trailing stop)
+Verify pre-market trading capabilities and restrictions
+Test order modification and cancellation functions
+Understand position tracking and account monitoring features
+Confirm paper trading environment functionality
+Account and Risk Management:
+Verify real-time account balance and buying power monitoring
+Test position size calculations and validation
+Understand day trading rules (PDT) implementation
+Confirm stop-loss order capabilities and reliability
+Data Limitations and Workarounds:
+Identify any gaps in market data coverage
+Research supplementary data sources if needed (news feeds, fundamental data)
+Plan fallback strategies for data outages or API downtime
+Document any geographical or account type restrictions
+Enhanced Screening System Design
+Multi-Source Data Integration Strategy
+Design a flexible screening system that can incorporate multiple data sources:
+Primary Data Source (Alpaca):
+Real-time price and volume data
+Gap calculations and percentage changes
+Market cap and shares outstanding information
+Basic company information and sector classification
+Supplementary Data Sources (Research and Integrate):
+News feeds: Alpha Vantage, News API, or web scraping financial news sites
+Fundamental data: SEC filings, earnings announcements, FDA calendar
+Social sentiment: Reddit, Twitter, StockTwits mentions (if relevant)
+Float data: More accurate free float information if Alpaca's is insufficient
+Optimized Screening Logic Implementation
+Stage 1: Universe Filtering (Broad Filter) Create efficient filtering logic that handles large datasets:
+Start with all NYSE, NASDAQ, AMEX listed stocks
+Apply basic filters first (price range, exchange, market cap) to reduce dataset
+Use vectorized pandas operations for performance
+Implement parallel processing if dataset is large
+Stage 2: Gap and Volume Analysis Design calculations that handle various market conditions:
+Gap percentage: (Current Price - Previous Close) / Previous Close * 100
+Relative volume calculation: Current Volume / Average Volume (20-day)
+Handle stock splits, dividends, and other corporate actions
+Account for holiday schedules and shortened trading days
+Stage 3: Real-Time Pattern Recognition Build momentum detection algorithms that update continuously:
+Implement sliding window analysis for step-up pattern detection
+Create volume-price correlation indicators
+Design trend strength measurements
+Build support/resistance level calculations
+Stage 4: News Catalyst Integration Develop flexible news integration system:
+Web scraping capabilities for financial news sites
+Keyword matching for relevant catalyst types
+Sentiment analysis for news impact assessment
+Time correlation between news and price movements
+Advanced Screening Parameters (Optimized for Parabolic Moves)
+Primary Filters:
+Gap percentage: 200% minimum (focus on extreme moves only)
+Stock price: $2.00 - $15.00 (optimal range for explosive percentage gains)
+Market cap: $25M - $200M (sweet spot for momentum potential)
+Free float: 5M - 75M shares (balance between liquidity and move potential)
+Relative volume: 10x minimum average (strong momentum confirmation)
+Absolute volume: 500K shares minimum by screening time
+Quality and Risk Filters:
+Bid-ask spread: Maximum 3% of stock price
+Previous day's range breakout: Must be breaking 20-day trading range
+Sector diversification: Maximum 2 stocks per sector
+Recent gap history: No major gaps (>100%) in previous 5 days
+Average daily volatility: Minimum 5% to handle momentum moves
+Real-Time Pattern Recognition System
+Step-Up Momentum Detection Algorithm
+Design sophisticated pattern recognition that identifies your proven edge:
+Core Pattern Elements:
+Consecutive higher highs with minimal retracements
+Volume confirmation on each price advance
+Time-based sustainability measurements
+Support level validation at previous resistance
+Implementation Strategy:
+Use 1-minute candlestick data for precision
+Implement rolling window analysis (5, 15, 30-minute windows)
+Create scoring system for pattern strength
+Build validation against historical successful patterns
+Pattern Validation Logic:
+Minimum 3 consecutive stepped advances required
+Each advance must hold 75% of previous leg gains
+Volume must increase with new highs
+Maximum pullback tolerance: 50% of any previous advance
+Time sustainability: Each level held for minimum 15 minutes
+Dynamic Market Context Integration
+Build market condition awareness into pattern recognition:
+Broad Market Indicators:
+SPY trend analysis and momentum
+VIX level assessment for volatility environment
+Sector rotation indicators and leadership changes
+Advance/decline ratio for market breadth
+Implementation Approach:
+Create market condition scoring system
+Adjust pattern sensitivity based on market environment
+Reduce activity during unfavorable conditions (VIX <15 or >50)
+Increase selectivity during transitional market periods
+Sophisticated Risk Management Framework
+Multi-Layer Risk Control System
+Design comprehensive risk management that prevents catastrophic losses:
+Position-Level Risk:
+Maximum risk per trade: $25 (based on proven discipline)
+Position sizing calculation: Risk Amount / (Entry Price - Stop Price)
+Maximum position size: 4% of account balance per trade
+Stop-loss validation and automatic placement
+Portfolio-Level Risk:
+Maximum daily loss: $40 (hard stop on all trading)
+Maximum concurrent positions: 3 stocks
+Maximum sector exposure: 50% of total positions
+Correlation analysis between active positions
+System-Level Risk:
+Account balance monitoring with automatic shutdowns
+Maximum drawdown limits (20% of peak balance)
+Emergency liquidation procedures for system failures
+Backup internet connection and power considerations
+Dynamic Risk Adjustment Logic
+Build adaptive risk management that responds to performance:
+Performance-Based Adjustments:
+Reduce position sizes after consecutive losses
+Increase position sizes gradually after proven success
+Adjust daily loss limits based on recent performance
+Modify stop-loss distances based on market volatility
+Market Condition Adjustments:
+Tighten risk parameters during high VIX periods
+Reduce position sizes during low-volume market conditions
+Increase selectivity during sector rotation periods
+Pause trading during major news events or Fed announcements
+Trade Execution and Management System
+Intelligent Order Management
+Design sophisticated order execution that maximizes edge:
+Entry Order Logic:
+Use limit orders slightly above current ask for immediate fills
+Implement order slicing for larger positions to minimize market impact
+Cancel and replace orders if market moves away quickly
+Validate order fills against expected execution quality
+Stop-Loss Implementation:
+Place stop-loss orders immediately upon position entry
+Use stop-limit orders to control execution slippage
+Implement trailing stops for profitable positions
+Monitor stop-loss order status continuously
+Profit-Taking Strategy:
+Scale out of positions at predetermined profit levels (40-cent targets)
+Reserve portion of position for extended moves
+Implement time-based exits if momentum stalls
+Use trailing stops to capture extended moves while protecting profits
+Re-Entry Logic for Sustained Momentum
+Build sophisticated re-entry system for capturing multiple legs:
+Re-Entry Conditions:
+Wait for micro-pullback (10-20 cent retracement)
+Confirm new high-of-day breakout with volume
+Limit re-entries to 3 per stock to avoid overconcentration
+Exit all positions if any leg shows 50% pullback
+Execution Timing:
+Monitor for consolidation patterns after profit-taking
+Use volume confirmation for re-entry signals
+Implement faster execution for re-entries (market orders if needed)
+Track cumulative profit per stock across multiple entries
+Comprehensive Testing and Validation Framework
+Multi-Phase Testing Strategy
+Design thorough testing protocol that validates every system component:
+Unit Testing (Individual Functions):
+Test all mathematical calculations with known inputs
+Validate pattern recognition against historical examples
+Verify risk management calculations under extreme scenarios
+Test error handling with simulated failure conditions
+Integration Testing (System Components):
+Verify data flows correctly between modules
+Test concurrent operations (screening while trading)
+Validate system behavior under various market conditions
+Confirm proper error propagation and recovery
+Historical Backtesting:
+Test system against minimum 2 years of historical data
+Validate against human trader's successful trades (700%, 5000% examples)
+Test system behavior during market crashes and extreme volatility
+Compare performance to buy-and-hold and market benchmarks
+Paper Trading Validation:
+Run system in paper trading mode for minimum 3 months
+Monitor all signals and theoretical performance
+Compare paper trading results to live market conditions
+Validate order execution quality and timing
+Performance Monitoring and Optimization
+Comprehensive Logging and Analytics
+Build extensive monitoring system that captures everything:
+Trade-Level Logging:
+Every screening decision and reasoning
+All pattern recognition assessments and scores
+Every order placement attempt and result
+All risk management triggers and actions
+System-Level Monitoring:
+API response times and reliability
+System performance metrics and resource usage
+Error rates and failure recovery times
+Market data quality and latency measurements
+Performance Analytics:
+Real-time profit/loss tracking with attribution analysis
+Win rate analysis by setup type and market conditions
+Risk-adjusted returns and Sharpe ratio calculations
+Correlation analysis between system decisions and outcomes
+Continuous Improvement Framework
+Design system for ongoing optimization and adaptation:
+Automated Performance Analysis:
+Daily performance reports with key metrics
+Weekly strategy effectiveness analysis
+Monthly system optimization recommendations
+Quarterly market regime analysis and adaptation suggestions
+Machine Learning Integration (Advanced):
+Pattern recognition improvement through successful trade analysis
+Market condition classification for strategy optimization
+Risk parameter optimization based on historical performance
+News sentiment analysis for catalyst strength prediction
+Production Deployment and Maintenance
+System Reliability and Uptime
+Design production-ready system with enterprise-level reliability:
+Infrastructure Requirements:
+Dedicated trading computer with backup power
+Redundant internet connections (primary and cellular backup)
+Automated system health monitoring and alerts
+Daily system backup and recovery procedures
+Error Handling and Recovery:
+Graceful degradation during partial system failures
+Automatic restart procedures with validation checks
+Manual override capabilities for emergency situations
+Comprehensive error logging and notification system
+Market Hours Management:
+Proper timezone handling and daylight saving adjustments
+Pre-market, regular session, and after-hours trading logic
+Holiday schedule integration and market closure handling
+System warm-up and cool-down procedures
+Security and Risk Controls
+Implement comprehensive security measures for financial trading system:
+API Security:
+Secure API key management and rotation
+Rate limiting and request throttling
+Connection encryption and authentication validation
+Suspicious activity monitoring and alerting
+Financial Risk Controls:
+Maximum account balance exposure limits
+Daily, weekly, and monthly loss limits
+Position size validation against account equity
+Emergency liquidation procedures and contacts
+System Access Controls:
+Secure system access and authentication
+Activity logging and audit trails
+Remote monitoring capabilities with secure access
+Backup system operation procedures
+Success Metrics and Continuous Optimization
+Performance Measurement Framework
+Define clear success criteria and measurement protocols:
+Trading Performance Metrics:
+Win rate targeting 45%+ on extreme gap setups
+Risk-reward ratio maintaining 1.5:1 or better
+Monthly returns targeting 10-15% on trading capital
+Maximum drawdown staying under 20% of peak balance
+System Performance Metrics:
+Order execution success rate >95%
+System uptime >99% during market hours
+Pattern recognition accuracy >60% for profitable setups
+Risk management compliance 100% (no limit violations)
+Operational Excellence Metrics:
+Data quality and availability >99%
+API response times within expected parameters
+Error recovery time <5 minutes for system failures
+Backup system activation time <2 minutes
+This comprehensive framework provides the foundation for building a sophisticated, reliable, and profitable parabolic momentum trading system using Python and Alpaca's API, while maintaining the discipline and edge that proved successful in human trading.
+
+
