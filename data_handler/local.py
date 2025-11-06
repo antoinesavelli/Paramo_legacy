@@ -322,10 +322,8 @@ class LocalDataHandler:
         if limit:
             df_all = df_all.tail(limit)
 
-        # Convert to ET timezone for analysis
-        if not df_all.empty:
-            df_all = self._convert_to_et(df_all)
-
+        # Keep timestamps in UTC for consistency across all data operations
+        # Timezone conversions should only happen at presentation layer if needed
         return df_all[['timestamp', 'open', 'high', 'low', 'close', 'volume']] if not df_all.empty else pd.DataFrame()
 
     def calculate_gaps(self, day: datetime, premarket: bool = False) -> Dict:
