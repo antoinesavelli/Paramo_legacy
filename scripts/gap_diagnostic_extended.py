@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -11,17 +11,18 @@ cfg = TradingConfig()
 dh = LocalDataHandler(cfg, data_dir=cfg.backtest.DATA_DIR)
 
 day = pd.Timestamp("2024-01-03")
-premarket = True
 
-res = dh.calculate_gaps(day, premarket=premarket)
+res = dh.calculate_gaps(day)  # ✅ Remove premarket parameter
 gaps = res.get("gaps", pd.DataFrame())
 
 print("date:", day.date())
 print("total merged rows (both days):", len(gaps))
 
-session_cfg = cfg.backtest.SESSION
+session_cfg = cfg.session  # ? CHANGED: was cfg.backtest.SESSION
 screen_cfg = cfg.screening
-min_gap = session_cfg.PREMARKET_MIN_GAP_PERCENT if premarket else screen_cfg.MIN_GAP_PERCENT
+
+# ? CHANGED: No longer conditional
+min_gap = screen_cfg.MIN_GAP_PERCENT
 min_price = screen_cfg.MIN_PRICE
 max_price = screen_cfg.MAX_PRICE
 
@@ -34,14 +35,9 @@ print("Sample top gaps (after filters):")
 print(after_price.sort_values('gap_percent', ascending=False).head(20).to_string(index=False))
 
 # Define session window used by screener (naive eastern times)
-if premarket:
-    start_dt = pd.Timestamp(day.year, day.month, day.day, 4, 0)
-    end_dt = pd.Timestamp(day.year, day.month, day.day, 20, 0)
-    warmup = session_cfg.PREMARKET_WARMUP_MINUTES
-else:
-    start_dt = pd.Timestamp(day.year, day.month, day.day, 9, 30)
-    end_dt = pd.Timestamp(day.year, day.month, day.day, 20, 0)
-    warmup = getattr(cfg.backtest, "WARMUP_MINUTES", 45)
+start_dt = pd.Timestamp(day.year, day.month, day.day, 9, 30)
+end_dt = pd.Timestamp(day.year, day.month, day.day, 20, 0)
+warmup = session_cfg.REGULAR_WARMUP_MINUTES  # ? CHANGED: was getattr fallback
 
 print(f"\nInspecting up to 50 symbols that passed gap+price (start={start_dt}, end={end_dt}, warmup={warmup}):\n")
 

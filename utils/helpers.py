@@ -1,4 +1,4 @@
-"""General utility helper functions."""
+﻿"""General utility helper functions."""
 
 import hashlib
 import json
@@ -26,14 +26,14 @@ def validate_config(config: Any) -> bool:
         required = [
             config.api.ALPACA_API_KEY,
             config.api.ALPACA_SECRET_KEY,
-            config.risk.MAX_RISK_PER_TRADE,
-            config.risk.MAX_DAILY_LOSS,
+            config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT,  # ✅ Updated
+            config.risk.PROFIT_TARGET_PERCENT_OF_ACCOUNT,  # ✅ Updated
             config.risk.MAX_CONCURRENT_POSITIONS,
             config.screening.MIN_GAP_PERCENT
         ]
         if any(v is None for v in required):
             return False
-        if config.risk.MAX_RISK_PER_TRADE <= 0 or config.risk.MAX_CONCURRENT_POSITIONS <= 0:
+        if config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT <= 0 or config.risk.MAX_CONCURRENT_POSITIONS <= 0:  # ✅ Updated
             return False
         return True
     except AttributeError:

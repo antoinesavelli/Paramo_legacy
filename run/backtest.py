@@ -74,7 +74,11 @@ def main():
         logger.info(f"Date Range: {start_date.date()} to {end_date.date()}")
         logger.info(f"Initial Capital: ${capital:,.2f}")
         logger.info(f"Data Directory: {config.backtest.DATA_DIR}")
-        logger.info(f"Premarket Enabled: {config.backtest.SESSION.PREMARKET_ENABLED}")
+        # Fixed: Access session config correctly
+        if hasattr(config.backtest, 'SESSION'):
+            logger.info(f"Premarket Enabled: {config.backtest.SESSION.PREMARKET_ENABLED}")
+        elif hasattr(config, 'session'):
+            logger.info(f"Premarket Enabled: {config.session.PREMARKET_ENABLED}")
         logger.info(f"Fast Mode: {config.backtest.FAST_MODE}")
         logger.info("=" * 80)
         print("✓ Configuration logged")

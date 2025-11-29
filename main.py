@@ -12,7 +12,7 @@ from core.risk_manager import RiskManager
 from core.trade_executor import TradeExecutor
 from core.monitor import Monitor
 from market_context.live import MarketContext
-from core.backtester import Backtester  # intraday-only backtesting
+from core.backtester import Backtester
 from utils.reporting import compute_statistics, generate_text_report
 import alpaca_trade_api as tradeapi
 from datetime import datetime, timedelta
@@ -30,63 +30,33 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 import functools
 import time as _time
 
-def verify_env_vars():
-    """Check for required environment variables (deprecated – prefer central validation)."""
-    if not os.getenv('ALPACA_API_KEY') or not os.getenv('ALPACA_SECRET_KEY'):
-        print("ERROR: Please set ALPACA_API_KEY and ALPACA_SECRET_KEY environment variables")
-        return False
-    print("Environment variables are set correctly.")
-    return True
 
 def _ensure_dir(path: str):
     """Create directory if it does not exist."""
     os.makedirs(path, exist_ok=True)
 
-def _ensure_domain_root(root_dir: str, domain_name: str, logger: logging.Logger):
-    """
-    Ensure domain root has date-first, daily-file layout:
-    - <root>/<domain>/raw/
-    - <root>/<domain>/processed/
-    """
-    if not root_dir:
-        return
-    root_name = os.path.basename(os.path.normpath(root_dir)).lower()
-    if root_name == domain_name:
-        domain_root = root_dir
-    else:
-        domain_root = os.path.join(root_dir, domain_name)
-
-    _ensure_dir(domain_root)
-    _ensure_dir(os.path.join(domain_root, "raw"))
-    _ensure_dir(os.path.join(domain_root, "processed"))
-
-    legacy_intraday = os.path.join(domain_root, "processed", "parquet", "intraday")
-    legacy_raw_intraday = os.path.join(domain_root, "raw", "intraday")
-    if os.path.exists(legacy_intraday) or os.path.exists(legacy_raw_intraday):
-        logger.warning(
-            f"Legacy paths detected under {domain_root}. Migrate to date-first files under "
-            f"'{domain_name}/processed/<YYYY-MM-DD>.parquet' and '{domain_name}/raw/<YYYY-MM-DD>/'"
-        )
-    return domain_root
 
 def ensure_storage_layout(market_root: str = None, news_root: str = None, logger: logging.Logger = None):
-    """Enforce required on-disk structure for tickers, news, sentiment."""
+    """
+    Ensure required directory structure exists.
+    
+    Expected structure:
+    - <data_dir>/YYYY/MM/YYYYMMDD.parquet (market data)
+    - <data_dir>/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)
+    - <data_dir>/news/ (news data)
+    - <data_dir>/market_context/ (SPY, VIX, RUT CSVs)
+    """
     logger = logger or logging.getLogger(__name__)
-    resolved_tickers_root = None
+    
     if market_root:
-        resolved_tickers_root = _ensure_domain_root(market_root, "tickers", logger)
-    resolved_news_root = None
+        _ensure_dir(market_root)
+        _ensure_dir(os.path.join(market_root, "daily_aggregates"))
+        logger.info(f"Storage ready for market data at: {market_root}")
+    
     if news_root:
-        resolved_news_root = _ensure_domain_root(news_root, "news", logger)
-    if resolved_news_root:
-        parent = os.path.dirname(os.path.normpath(resolved_news_root))
-        sentiment_base = parent if os.path.basename(os.path.normpath(resolved_news_root)).lower() == "news" else resolved_news_root
-        _ensure_domain_root(sentiment_base, "sentiment", logger)
-    if resolved_tickers_root:
-        logger.info(f"Storage ready for tickers at: {resolved_tickers_root}")
-    if resolved_news_root:
-        logger.info(f"Storage ready for news at: {resolved_news_root}")
-        logger.info(f"Storage ready for sentiment at: {os.path.join(os.path.dirname(resolved_news_root), 'sentiment')}")
+        _ensure_dir(news_root)
+        logger.info(f"Storage ready for news at: {news_root}")
+
 
 class TradingSystem:
     """Main trading system orchestrator"""
@@ -95,30 +65,39 @@ class TradingSystem:
         self.config = config or TradingConfig()
         setup_logging(level=logging.INFO, log_file="run.log")
         self.logger = logging.getLogger(__name__)
+        
         self.api = tradeapi.REST(
             self.config.api.ALPACA_API_KEY,
             self.config.api.ALPACA_SECRET_KEY,
             self.config.api.ALPACA_BASE_URL,
             api_version='v2'
         )
+        
         self.data_handler = APIDataHandler(self.config)
         self.screener = LiveScreener(self.config, self.data_handler)
         self.pattern_analyzer = PatternAnalyzer(self.config, self.data_handler)
         self.risk_manager = RiskManager(self.config, self.api)
-        self.trade_executor = TradeExecutor(self.config, self.api, self.risk_manager)
+        
+        self.market_context = MarketContext(self.config, self.api)
+        
+        self.trade_executor = TradeExecutor(
+            self.config, 
+            self.api, 
+            self.risk_manager,
+            market_context=self.market_context
+        )
+        
         self.monitor = Monitor(self.config)
         self.news_integration = NewsIntegrationLive(self.config)
-        self.market_context = MarketContext(self.config, self.api)
         self.running = False
         self.last_scan_time = None
         self.heartbeat_path = "runtime_heartbeat.txt"
         self.last_heartbeat = datetime.utcnow()
-        self.watchdog_interval = 120  # seconds
-        self.max_scan_seconds = 45    # abort scan if exceeds
+        self.watchdog_interval = 120
+        self.max_scan_seconds = 45
         self.executor = ThreadPoolExecutor(max_workers=8)
         self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
         self._watchdog_thread.start()
-        # Signal handling will be managed by entrypoints; retain for backward compatibility.
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
         self.logger.info("Trading system initialized")
@@ -136,13 +115,12 @@ class TradingSystem:
             _time.sleep(self.watchdog_interval)
             now = datetime.utcnow()
             delta = (now - self.last_heartbeat).total_seconds()
-            # If no heartbeat for 3x watchdog interval -> emergency handling
             if delta > self.watchdog_interval * 3:
                 self.logger.critical(f"Watchdog: system stalled (last heartbeat {delta:.0f}s ago). Initiating shutdown.")
                 try:
                     self.shutdown()
                 finally:
-                    os._exit(1)  # hard exit to let supervisor restart
+                    os._exit(1)
 
     def _signal_handler(self, signum, frame):
         self.logger.info("Shutdown signal received")
@@ -203,7 +181,12 @@ class TradingSystem:
                 return
             self.logger.debug("Starting market scan...")
             self.risk_manager.update_daily_pnl()
-            if self.risk_manager.daily_pnl <= -self.config.risk.MAX_DAILY_LOSS:
+            
+            account = self.api.get_account()
+            equity = float(account.equity)
+            max_daily_loss_dollars = equity * (self.config.risk.MAX_DAILY_LOSS_PERCENT / 100.0)
+            
+            if self.risk_manager.daily_pnl <= -max_daily_loss_dollars:
                 self.logger.warning("Daily loss limit reached. Stopping scans.")
                 return
             try:
@@ -265,8 +248,9 @@ class TradingSystem:
 
     def update_positions(self):
         try:
-            self.trade_executor.check_profit_targets()
+            self.trade_executor.check_max_hold_time()
             self.trade_executor.update_stops()
+            
             for symbol, position in list(self.trade_executor.active_trades.items()):
                 if position and 'entry_time' in position:
                     if datetime.now() - position['entry_time'] > timedelta(hours=2):
@@ -283,13 +267,16 @@ class TradingSystem:
             self.risk_manager.update_daily_pnl()
             account = self.api.get_account()
             equity = float(account.equity)
+            
             if self.risk_manager.peak_balance > 0:
                 drawdown = ((self.risk_manager.peak_balance - equity) / self.risk_manager.peak_balance) * 100
                 if drawdown >= self.config.risk.MAX_DRAWDOWN_PERCENT * 1.2:
                     self.logger.critical(f"EMERGENCY: Drawdown {drawdown:.2f}% exceeds limits")
                     self.risk_manager.emergency_liquidate_all()
                     self.running = False
-            if self.risk_manager.daily_pnl <= -self.config.risk.MAX_DAILY_LOSS:
+            
+            max_daily_loss_dollars = equity * (self.config.risk.MAX_DAILY_LOSS_PERCENT / 100.0)
+            if self.risk_manager.daily_pnl <= -max_daily_loss_dollars:
                 self.logger.warning("Daily loss limit reached. Closing all positions.")
                 for symbol in list(self.trade_executor.active_trades.keys()):
                     try:
