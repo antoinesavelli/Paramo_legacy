@@ -117,18 +117,34 @@ class GapCalculator:
         close_utc_prev = close_et_prev.tz_convert('UTC')
 
         td = today_df[[col, 'timestamp', 'open', 'close']].dropna(subset=[col, 'timestamp']).copy()
+
+        # Log timestamp info for debugging
+        if not td.empty:
+            sample_ts = td['timestamp'].iloc[0]
+            logger.debug(f"Today's data: {len(td)} bars, sample timestamp: {sample_ts} (tz={sample_ts.tz}), "
+                        f"open_utc threshold: {open_utc}, premarket: {premarket}")
+
         td = td[td['timestamp'] >= open_utc]
         if td.empty:
             out['today_empty'] = True
+            logger.debug(f"No opening bars found for {today_str} after filtering for timestamp >= {open_utc}")
             return out
         td = td.sort_values('timestamp')
         first_idx = td.groupby(col)['timestamp'].head(1).index
         today_open = td.loc[first_idx][[col, 'open']].rename(columns={col: 'symbol', 'open': 'open_price'})
 
         pv = prev_df[[col, 'timestamp', 'close']].dropna(subset=[col, 'timestamp']).copy()
+
+        # Log timestamp info for debugging
+        if not pv.empty:
+            sample_ts = pv['timestamp'].iloc[0]
+            logger.debug(f"Previous day data: {len(pv)} bars, sample timestamp: {sample_ts} (tz={sample_ts.tz}), "
+                        f"close_utc threshold: {close_utc_prev}")
+
         pv = pv[pv['timestamp'] <= close_utc_prev]
         if pv.empty:
             out['prev_empty'] = True
+            logger.debug(f"No closing bars found for {prev_str} after filtering for timestamp <= {close_utc_prev}")
             return out
         pv = pv.sort_values('timestamp')
         last_idx = pv.groupby(col)['timestamp'].tail(1).index
