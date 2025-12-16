@@ -1,4 +1,4 @@
-"""Logging utilities and helpers."""
+﻿"""Logging utilities and helpers."""
 
 import logging
 from typing import Optional
@@ -99,7 +99,52 @@ def enable_backtest_optimization(level: BacktestLogLevel = BacktestLogLevel.MINI
 
 
 class OptimizedLogger:
-    """Logger that can be disabled for performance with buffering support."""
+    """
+    Performance-optimized logger with buffering support for high-throughput scenarios.
+    
+    ⚠️  IMPORTANT BUFFERING BEHAVIOR:
+    ------------------------------------
+    - Logs are buffered up to 1000 entries before automatic flushing
+    - Warnings and errors are ALWAYS logged immediately (not buffered)
+    - Info and debug messages are buffered for performance
+    - Call .flush() explicitly to write buffered logs immediately
+    
+    WHEN TO USE:
+    ------------
+    - Performance-critical loops (e.g., processing thousands of trades)
+    - Backtests with high-frequency logging
+    - Batch operations where immediate logging isn't required
+    
+    WHEN NOT TO USE:
+    ----------------
+    - Live trading (use regular logger for real-time monitoring)
+    - Error-critical paths where immediate visibility is required
+    - Interactive debugging sessions
+    
+    USAGE EXAMPLE:
+    --------------
+    ```python
+    # Setup
+    base_logger = logging.getLogger(__name__)
+    opt_logger = OptimizedLogger(base_logger, enabled=True)
+    
+    # High-frequency loop
+    for i in range(10000):
+        opt_logger.info(f"Processing item {i}")  # Buffered
+        if i % 1000 == 0:
+            opt_logger.flush()  # Periodic flush
+    
+    # Final flush
+    opt_logger.flush()  # ✅ IMPORTANT: Always flush at end!
+    ```
+    
+    BUFFER MANAGEMENT:
+    ------------------
+    - Buffer size: 1000 entries (configurable via _buffer_size)
+    - Auto-flush: Triggered when buffer is full
+    - Manual flush: Call .flush() to write immediately
+    - No flush on warnings/errors: They bypass the buffer
+    """
     
     def __init__(self, base_logger, enabled=True):
         self.base_logger = base_logger
@@ -108,9 +153,9 @@ class OptimizedLogger:
         self._buffer_size = 1000
     
     def info(self, msg, *args, **kwargs):
+        """Log info message (buffered)."""
         if not self.enabled:
             return
-        # Buffer instead of immediate write
         if len(self._buffer) < self._buffer_size:
             self._buffer.append(('info', msg, args, kwargs))
         else:
@@ -118,6 +163,7 @@ class OptimizedLogger:
             self.base_logger.info(msg, *args, **kwargs)
     
     def debug(self, msg, *args, **kwargs):
+        """Log debug message (buffered)."""
         if not self.enabled:
             return
         if len(self._buffer) < self._buffer_size:
@@ -127,15 +173,20 @@ class OptimizedLogger:
             self.base_logger.debug(msg, *args, **kwargs)
             
     def warning(self, msg, *args, **kwargs):
-        # Always log warnings immediately
+        """Log warning message (NOT buffered - immediate)."""
         self.base_logger.warning(msg, *args, **kwargs)
         
     def error(self, msg, *args, **kwargs):
-        # Always log errors immediately
+        """Log error message (NOT buffered - immediate)."""
         self.base_logger.error(msg, *args, **kwargs)
     
     def flush(self):
-        """Write buffered logs."""
+        """
+        Write all buffered logs immediately.
+        
+        ⚠️  IMPORTANT: Always call this at the end of your workflow
+        to ensure all buffered logs are written!
+        """
         for level, msg, args, kwargs in self._buffer:
             getattr(self.base_logger, level)(msg, *args, **kwargs)
         self._buffer.clear()

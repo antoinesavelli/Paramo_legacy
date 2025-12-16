@@ -1,10 +1,10 @@
-# =====================================================
+﻿# =====================================================
 # config.py - Configuration and Settings
 # =====================================================
 
 import os
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Optional
 from datetime import time
 
 @dataclass(frozen=True)
@@ -16,51 +16,90 @@ class APIConfig:
 
 @dataclass(frozen=True)
 class ScreeningConfig:
-    """Screening parameters for parabolic moves."""
-    MIN_GAP_PERCENT: float = 5.0
-    MIN_PRICE: float = 1.00
+    """Screening parameters (unified for all modes and sessions)."""
+    MIN_GAP_PERCENT: float = 50.0  
+    MIN_PRICE: float = 2.00
     MAX_PRICE: float = 20.00
-    MIN_MARKET_CAP: float = 25_000_000
-    MAX_MARKET_CAP: float = 200_000_000_000
-    MIN_FLOAT: int = 0
-    MAX_FLOAT: int = 100_000_000
+    MIN_FLOAT: int = 0  # Ignored in backtest
+    MAX_FLOAT: int = 100_000_000  # Ignored in backtest
     MIN_RELATIVE_VOLUME: float = 2.0
-    MIN_ABSOLUTE_VOLUME: int = 200_000
-    MAX_SPREAD_PERCENT: float = 2.0
-    MIN_DAILY_VOLATILITY: float = 10.0
+    MIN_ABSOLUTE_VOLUME: int = 100_000
+    ENABLE_RELATIVE_VOLUME: bool = True
+    RELATIVE_VOLUME_LOOKBACK_DAYS: int = 10
+
+@dataclass(frozen=True)
+class SessionConfig:
+    """Session timing parameters (shared across live and backtest)."""
+    # Premarket session
+    PREMARKET_ENABLED: bool = True
+    PREMARKET_START_ET: str = "04:00"
+    PREMARKET_END_ET: str = "09:30"
+    PREMARKET_WARMUP_MINUTES: int = 30
+    PREMARKET_MIN_BARS: int = 5
+    
+    # Regular session
+    REGULAR_START_ET: str = "09:30"
+    REGULAR_END_ET: str = "16:00"
+    REGULAR_WARMUP_MINUTES: int = 30
+    REGULAR_MIN_BARS: int = 5
+    
+    # Backtest-specific
+    PREMARKET_SLIPPAGE_MULT: float = 2.0
+    REGULAR_SLIPPAGE_MULT: float = 1.0
+    PREMARKET_MIN_SESSION_VOLUME: int = 10000
 
 @dataclass(frozen=True)
 class PatternConfig:
-    """Pattern recognition parameters."""
+    """Pattern recognition parameters with dynamic thresholds based on gap size."""
     MIN_STEP_UPS: int = 2
-    MIN_ADVANCE_RETENTION: float = 60.0
+    MIN_ADVANCE_RETENTION: float = 35.0
     MAX_PULLBACK_PERCENT: float = 40.0
-    MIN_HOLD_TIME_MINUTES: int = 10
     PATTERN_WINDOW_SIZES: List[int] = field(default_factory=lambda: [5, 15, 30])
 
-    # New: make detector thresholds configurable
-    PARABOLIC_MIN_ANGLE: float = 45.0
-    PARABOLIC_MIN_ACCELERATION: float = 0.02
-    PARABOLIC_MIN_VOL_MULTIPLIER: float = 2.5
+    PARABOLIC_MIN_ANGLE: float = -999
+    PARABOLIC_MAX_ANGLE: float = 999.0
+    PARABOLIC_MIN_ACCELERATION: float = -999
+    PARABOLIC_MIN_VOL_MULTIPLIER: float = -999
 
     BREAKOUT_LOOKBACK: int = 20
-    BREAKOUT_PRICE_BUFFER_PCT: float = 0.005  # 0.5% above recent high
-    BREAKOUT_VOL_MULTIPLIER: float = 2.0
-
-    # Confluence gate
-    CONFLUENCE_MIN_SCORE: float = 55.0
+    BREAKOUT_PRICE_BUFFER_PCT: float = 0.005
+    BREAKOUT_VOL_MULTIPLIER: float = 0.5
+    
+    # Dynamic confluence thresholds based on gap size
+    CONFLUENCE_EXTREME_GAP_THRESHOLD: float = 100.0
+    CONFLUENCE_EXTREME_GAP_MIN_SCORE: float = 5.0
+    
+    CONFLUENCE_LARGE_GAP_THRESHOLD: float = 50.0
+    CONFLUENCE_LARGE_GAP_MIN_SCORE: float = 10.0
+    
+    CONFLUENCE_NORMAL_GAP_MIN_SCORE: float = 15.0
     CONFLUENCE_MIN_PATTERNS: int = 1
+    
+    # Pattern confluence weights (must sum to 1.0 for interpretability)
+    CONFLUENCE_WEIGHT_STEP_UP: float = 0.40
+    CONFLUENCE_WEIGHT_PARABOLIC: float = 0.0
+    CONFLUENCE_WEIGHT_BREAKOUT: float = 0.15
+    CONFLUENCE_WEIGHT_VOLUME: float = 0.20
+    CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE: float = 0.25
 
 @dataclass(frozen=True)
 class RiskConfig:
-    """Risk management parameters."""
-    MAX_RISK_PER_TRADE: float = 25.00
-    MAX_POSITION_SIZE_PERCENT: float = 4.0
-    MAX_DAILY_LOSS: float = 40.00
+    """Risk management parameters - percentage-based with ATR trailing stops."""
+    STOP_LOSS_PERCENT_OF_ACCOUNT: float = 2.0
+    MAX_HOLD_TIME_MINUTES: int = 30
+    
+    # ATR-based trailing stop parameters
+    ATR_TRAILING_ENABLED: bool = True
+    ATR_TRAILING_PERIOD: int = 10
+    ATR_TRAILING_MULTIPLIER: float = 1.5
+    ATR_TRAILING_MIN_PROFIT_PCT: float = 1.0
+    
+    # Position sizing and portfolio limits
+    MAX_POSITION_SIZE_PERCENT: float = 25.0
+    MAX_DAILY_LOSS_PERCENT: float = 6.0
     MAX_CONCURRENT_POSITIONS: int = 3
     MAX_SECTOR_EXPOSURE: float = 0.50
     MAX_DRAWDOWN_PERCENT: float = 20.0
-    PROFIT_TARGET_CENTS: float = 40.0
 
 @dataclass(frozen=True)
 class ReentryConfig:
@@ -89,27 +128,31 @@ class SystemConfig:
     BATCH_SIZE: int = 100
     MAX_RETRIES: int = 3
     
-    # Enhanced logging control
     LOG_PROGRESS_EVERY_N_SYMBOLS: int = 10
     LOG_DAILY_SUMMARY: bool = True
     LOG_TRADE_DETAILS: bool = True
+    
+    # Memory management
+    FORCE_GARBAGE_COLLECTION: bool = True
+    GC_FREQUENCY_DAYS: int = 1
+    
+    # Day cache limit - each day file is ~135 MiB
+    MAX_DAY_CACHE_SIZE: int = 2  # Only 2 days (~270 MiB)
+    
+    CLEAR_CACHE_BETWEEN_DAYS: bool = True
 
 @dataclass(frozen=True)
 class MarketContextConfig:
     """Shared configuration for MarketContext (live and backtest)."""
-    # Symbols
     SPY_SYMBOL: str = 'SPY'
-    VIX_SYMBOL: str = 'VXX'
-    RUT_SYMBOL: str = 'RUT'  # or 'IWM' for live if needed
+    VIX_SYMBOL: str = 'VIX'
+    RUT_SYMBOL: str = 'RUT'
 
-    # CSV backtest directory (used by BacktestMarketContext)
     CSV_DIR: str = r'D:\trading_data\market_context'
 
-    # Trend settings
     SMA_FAST: int = 5
     SMA_SLOW: int = 20
 
-    # Weights for scoring (small-cap focused)
     SPY_TREND_BULL_WEIGHT: float = 10.0
     SPY_TREND_BEAR_WEIGHT: float = -5.0
     RUT_TREND_BULL_WEIGHT: float = 20.0
@@ -117,46 +160,28 @@ class MarketContextConfig:
     RUT_LEAD_BONUS: float = 5.0
     RUT_LEAD_MOMENTUM_EDGE: float = 0.5
 
-    # VIX classification bands
     VIX_LOW_MAX: float = 15.0
     VIX_NORMAL_MAX: float = 20.0
     VIX_ELEVATED_MAX: float = 30.0
     VIX_HIGH_MAX: float = 50.0
 
-    # Scoring/environment thresholds
     ENV_FAVORABLE_MIN: float = 70.0
     ENV_NEUTRAL_MIN: float = 40.0
     SHOULD_TRADE_MIN_SCORE_IF_UNFAVORABLE: float = 30.0
     BLOCK_ON_VIX_EXTREME: bool = True
 
-    # Position size adjustments
     SIZE_ADJ_FAVORABLE: float = 1.2
     SIZE_ADJ_UNFAVORABLE: float = 0.7
 
-    # Breadth proxy thresholds (RUT vs SPY daily returns)
     BREADTH_POSITIVE_RUT_RET_MIN: float = 0.005
     BREADTH_NEGATIVE_RUT_RET_MAX: float = -0.005
-
-@dataclass(frozen=True)
-class BacktestSessionConfig:
-    """Configuration for backtest sessions."""
-    PREMARKET_ENABLED: bool = True
-    PREMARKET_START_ET: str = "04:00"
-    PREMARKET_END_ET: str = "09:30"
-    PREMARKET_WARMUP_MINUTES: int = 25
-    PREMARKET_MIN_GAP_PERCENT: float = 3.0
-    PREMARKET_MIN_ABSOLUTE_VOLUME: int = 15000
-    PREMARKET_MIN_SESSION_VOLUME: int = 10000
-    PREMARKET_MAX_SPREAD_PERCENT: float = 4.0
-    PREMARKET_MIN_BARS: int = 15
-    PREMARKET_SLIPPAGE_MULT: float = 2.0
 
 @dataclass(frozen=True)
 class BacktestConfig:
     """Backtest configuration (intraday only)."""
     START_DATE: str = '2024-01-03'
-    END_DATE: str   = '2024-01-31'
-    INITIAL_CAPITAL: float = 1000.0
+    END_DATE: str = '2024-08-07'
+    INITIAL_CAPITAL: float = 2500.0
 
     BASE_DATA_DIR: str = r'D:\trading_data'
     DATA_DIR: str = r'D:\trading_data'
@@ -164,10 +189,9 @@ class BacktestConfig:
 
     INTRADAY: bool = True
     INTRADAY_TIMEFRAME: str = '1Min'
-    WARMUP_MINUTES: int = 15
     ENTRY_CUTOFF_MINUTES: int = 240
     MAX_CANDIDATES_PER_DAY: int = 15
-    MIN_NEWS_STRENGTH: int = 0
+    MIN_NEWS_STRENGTH: int = 30
     IGNORE_CATALYST: bool = True
 
     DATA_TZ: str = "US/Eastern"
@@ -175,14 +199,12 @@ class BacktestConfig:
 
     AUTO_CREATE_STORAGE_DIRS: bool = False
     ALLOW_FIRST_DAY_WITHOUT_PREV: bool = False
-    SESSION: BacktestSessionConfig = field(default_factory=BacktestSessionConfig)
 
     FAST_MODE: bool = True
     LOG_LEVEL_OVERRIDE: Optional[str] = None
     ENABLE_REENTRY: bool = False
     SIMPLE_STOPS: bool = True
     
-    # Progress logging controls
     LOG_DAILY_PROGRESS: bool = True
     LOG_SCREENING_DETAILS: bool = True
     LOG_PATTERN_ANALYSIS: bool = False
@@ -192,6 +214,7 @@ class TradingConfig:
     """Central configuration for the trading system."""
     api: APIConfig = field(default_factory=APIConfig)
     screening: ScreeningConfig = field(default_factory=ScreeningConfig)
+    session: SessionConfig = field(default_factory=SessionConfig)
     pattern: PatternConfig = field(default_factory=PatternConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     reentry: ReentryConfig = field(default_factory=ReentryConfig)

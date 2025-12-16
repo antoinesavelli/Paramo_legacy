@@ -1,4 +1,4 @@
-# =====================================================
+﻿# =====================================================
 # reporting.py - Shared Performance Reporting
 # =====================================================
 
@@ -164,6 +164,21 @@ def compute_statistics(
     # Notable trades
     best_trade = max(trades, key=lambda t: t.get('pnl', float('-inf'))) if trades else None
     worst_trade = min(trades, key=lambda t: t.get('pnl', float('inf'))) if trades else None
+    # Hold time stats
+    hold_times = [_duration_minutes(t) for t in trades]
+    avg_hold_time = round(np.mean(hold_times), 2) if hold_times else 0.0
+    max_hold_time = round(np.max(hold_times), 2) if hold_times else 0.0
+    min_hold_time = round(np.min(hold_times), 2) if hold_times else 0.0
+    # Exit reasons breakdown
+    exit_reasons = _by_exit_reason(trades)
+
+    # ✅ NEW: MAE/MFE statistics (risk efficiency metrics)
+    mae_values = [t.get('mae', 0) for t in trades if 'mae' in t]
+    mfe_values = [t.get('mfe', 0) for t in trades if 'mfe' in t]
+    
+    avg_mae = round(np.mean(mae_values), 2) if mae_values else 0.0
+    avg_mfe = round(np.mean(mfe_values), 2) if mfe_values else 0.0
+    efficiency = round((avg_mfe / avg_mae * 100), 2) if avg_mae > 0 else 0.0
 
     return {
         'total_trades': total_trades,
@@ -198,6 +213,13 @@ def compute_statistics(
             'pnl': round(worst_trade.get('pnl', 0), 2),
             'return_pct': round(worst_trade.get('return_pct', 0), 2)
         } if worst_trade else None,
+        'avg_hold_time_minutes': avg_hold_time,
+        'max_hold_time_minutes': max_hold_time,
+        'min_hold_time_minutes': min_hold_time,
+        'exit_reasons': exit_reasons,
+        'avg_mae': avg_mae,  # Average Max Adverse Excursion
+        'avg_mfe': avg_mfe,  # Average Max Favorable Excursion
+        'exit_efficiency': efficiency,  # % of favorable move captured
     }
 
 
@@ -218,10 +240,17 @@ def generate_text_report(stats: Dict, title: str = "PERFORMANCE REPORT") -> str:
     lines.append(f"  Net Profit:      ${stats.get('net_profit', 0):,.2f}")
     lines.append(f"  Avg Win:         ${stats.get('avg_win', 0):,.2f}")
     lines.append(f"  Avg Loss:        ${stats.get('avg_loss', 0):,.2f}")
-    if stats.get('best_trade'):
+    # Hold time stats
+    lines.append("")
+    lines.append("Hold Times")
+    lines.append(f"  Average:  {stats.get('avg_hold_time_minutes', 0):.1f} minutes")
+    lines.append(f"  Maximum:  {stats.get('max_hold_time_minutes', 0):.1f} minutes")
+    lines.append(f"  Minimum:  {stats.get('min_hold_time_minutes', 0):.1f} minutes")
+    # Exit reasons breakdown
+    exit_reasons = stats.get('exit_reasons', {})
+    if exit_reasons:
         lines.append("")
-        lines.append("Notable Trades")
-        lines.append(f"  Best:  {stats['best_trade']['symbol']}  ${stats['best_trade']['pnl']:,.2f} ({stats['best_trade']['return_pct']:.2f}%)")
-        if stats.get('worst_trade'):
-            lines.append(f"  Worst: {stats['worst_trade']['symbol']}  ${stats['worst_trade']['pnl']:,.2f} ({stats['worst_trade']['return_pct']:.2f}%)")
+        lines.append("Exit Reasons")
+        for reason, data in sorted(exit_reasons.items(), key=lambda x: x[1]['count'], reverse=True):
+            lines.append(f"  {reason}: {data['count']} trades ({data['win_rate']:.1f}% win rate, avg P&L ${data['avg_pnl']:.2f})")
     return "\n".join(lines)

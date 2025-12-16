@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 import sys
 # Ensure project root is on sys.path so top-level packages like `config` are importable
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,9 +13,8 @@ cfg = TradingConfig()
 dh = LocalDataHandler(cfg, data_dir=cfg.backtest.DATA_DIR)
 
 day = pd.Timestamp("2024-01-03")
-premarket = True
 
-res = dh.calculate_gaps(day, premarket=premarket)
+res = dh.calculate_gaps(day)  # ✅ Remove premarket parameter
 gaps = res.get("gaps", pd.DataFrame())
 
 print("date:", day.date())
@@ -29,8 +28,10 @@ if not gaps.empty:
 
 # Apply screener filters exactly as code does
 screen_cfg = cfg.screening
-session_cfg = cfg.backtest.SESSION
-min_gap = session_cfg.PREMARKET_MIN_GAP_PERCENT if premarket else screen_cfg.MIN_GAP_PERCENT
+session_cfg = cfg.session  # ? CHANGED: was cfg.backtest.SESSION
+
+# ? CHANGED: No longer conditional - always use screening.MIN_GAP_PERCENT
+min_gap = screen_cfg.MIN_GAP_PERCENT
 min_price = screen_cfg.MIN_PRICE
 max_price = screen_cfg.MAX_PRICE
 

@@ -6,9 +6,10 @@ import signal
 import sys
 import logging
 import argparse
-from main import TradingSystem, verify_env_vars
+from main import TradingSystem
 from cli.common import add_logging_args, configure_logging
 from config.loader import build_config
+
 
 def build_parser():
     p = argparse.ArgumentParser(description="Run live trading system")
@@ -16,10 +17,11 @@ def build_parser():
     p.add_argument("--dry-run", action="store_true",
                    help="Initialize components but do not place real orders (requires TradeExecutor support).")
     p.add_argument("--override", action="append",
-                   help="Config override key=value (repeatable). Example: --override risk.MAX_DAILY_LOSS=500")
+                   help="Config override key=value (repeatable). Example: --override risk.MAX_DAILY_LOSS_PERCENT=10")
     p.add_argument("--export-config", help="Write effective sanitized config to path", default="artifacts/live/effective_config.json")
     p.add_argument("--no-env-layer", action="store_true", help="Disable environment variable override layer.")
     return p
+
 
 def main():
     parser = build_parser()
@@ -28,15 +30,25 @@ def main():
     configure_logging(args.log_level, log_file="run.log")
     logger = logging.getLogger("run_live")
 
-    if not verify_env_vars():
-        logger.error("Missing required environment variables.")
+    # Build config (includes validation)
+    try:
+        config = build_config(
+            cli_overrides=args.override,
+            enable_env_layer=not args.no_env_layer,
+            export_path=args.export_config
+        )
+    except ValueError as e:
+        logger.error(f"Configuration validation failed: {e}")
+        return 2
+    except Exception as e:
+        logger.error(f"Configuration error: {e}")
         return 2
 
-    config = build_config(
-        cli_overrides=args.override,
-        enable_env_layer=not args.no_env_layer,
-        export_path=args.export_config
-    )
+    # Verify API keys are set
+    if not config.api.ALPACA_API_KEY or not config.api.ALPACA_SECRET_KEY:
+        logger.error("Missing required environment variables: ALPACA_API_KEY and/or ALPACA_SECRET_KEY")
+        logger.error("Please set these environment variables before running the system.")
+        return 2
 
     system = TradingSystem(config=config)
 
@@ -70,6 +82,7 @@ def main():
             pass
         return 1
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
