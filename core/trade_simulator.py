@@ -197,6 +197,23 @@ class TradeSimulator:
             all_bars = self.data_handler.get_intraday_bars(
                 symbol, '1Min', start=session_start_utc, end=session_end_utc
             )
+
+            # ✅ FIX: Log if bars are missing for exit simulation
+            if all_bars.empty:
+                self.logger.error(
+                    f"[DATA LOSS] {symbol}: No bars available for exit simulation! "
+                    f"Entry={entry_ts}, Session={session_start_utc} to {session_end_utc}. "
+                    f"This indicates data was dropped or filtered out."
+                )
+            else:
+                bars_fwd = all_bars[all_bars['timestamp'] > entry_ts]
+                if bars_fwd.empty and not all_bars.empty:
+                    self.logger.warning(
+                        f"[DATA ISSUE] {symbol}: No bars available AFTER entry time! "
+                        f"Entry={entry_ts}, Last bar={all_bars['timestamp'].max()}, Total bars={len(all_bars)}. "
+                        f"Entry time may be at/after end of available data."
+                    )
+
             bars_fwd = all_bars[all_bars['timestamp'] > entry_ts] if not all_bars.empty else all_bars
             trade = self.simulate_exit(symbol, bars_fwd, day, results)
             

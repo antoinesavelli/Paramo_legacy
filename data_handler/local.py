@@ -292,14 +292,16 @@ class LocalDataHandler:
         if date_str in self._day_cache:
             self._day_cache.move_to_end(date_str)
             return self._day_cache[date_str]
-        
+
         if date_str in self._missing_days_cache:
             return pd.DataFrame()
-        
+
         if date_str not in self._file_index:
+            # ✅ FIX: Only cache as missing if file truly doesn't exist
             self._missing_days_cache.add(date_str)
+            logger.debug(f"{date_str}: No data in file index")
             return pd.DataFrame()
-        
+
         try:
             date_obj = pd.to_datetime(date_str)
             year = str(date_obj.year)
@@ -307,13 +309,15 @@ class LocalDataHandler:
             date_compact = date_str.replace('-', '')
             filename = f"{date_compact}.parquet"
             filepath = self.data_dir / year / month / filename
-            
+
             if not filepath.exists():
+                # ✅ FIX: Only cache as missing if file doesn't exist
                 self._missing_days_cache.add(date_str)
+                logger.debug(f"{date_str}: File not found at {filepath}")
                 return pd.DataFrame()
-            
-            df = self._read_parquet_safe(filepath)
-            
+
+            df = self._read_parquet_safe(filepath, date_str)
+
             if not df.empty:
                 df = self._normalize_columns(df)
                 # Cache eviction - remove oldest if at limit
@@ -321,13 +325,19 @@ class LocalDataHandler:
                     self._day_cache.popitem(last=False)
                 self._day_cache[date_str] = df
             else:
-                self._missing_days_cache.add(date_str)
-            
+                # ✅ FIX: Don't cache as missing if file exists but is corrupt/empty
+                # This allows retry on next attempt
+                logger.error(
+                    f"{date_str}: File exists at {filepath} but returned empty data - "
+                    f"possible corruption or read error (not caching as missing to allow retry)"
+                )
+
             return df
-            
+
         except Exception as e:
-            logger.error(f"Error loading day data for {date_str}: {e}")
-            self._missing_days_cache.add(date_str)
+            # ✅ FIX: Don't cache as missing on exception - allow retry
+            logger.error(f"Error loading day data for {date_str}: {e}", exc_info=True)
+            logger.warning(f"{date_str}: Not caching as missing to allow retry on next attempt")
             return pd.DataFrame()
     
     @staticmethod
@@ -463,14 +473,38 @@ class LocalDataHandler:
             if not day_df.empty and 'symbol' in day_df.columns:
                 symbol_df = day_df[day_df['symbol'] == symbol]
                 if not symbol_df.empty:
+                    original_count = len(symbol_df)
                     symbol_df = self._normalize_columns(symbol_df)
-                    # Filter out zero-price bars
+
+                    # ✅ FIX: Log timestamp normalization issues
+                    if 'timestamp' in symbol_df.columns:
+                        nat_count = symbol_df['timestamp'].isna().sum()
+                        if nat_count > 0:
+                            logger.warning(
+                                f"{symbol} {date_str}: {nat_count}/{len(symbol_df)} bars have invalid timestamps (NaT)"
+                            )
+
+                    # ✅ FIX: Filter out zero-price bars with logging
+                    before_filter = len(symbol_df)
                     symbol_df = symbol_df[
-                        (symbol_df['open'] > 0) & 
+                        (symbol_df['open'] > 0) &
                         (symbol_df['close'] > 0)
                     ].copy()
+                    after_filter = len(symbol_df)
+
+                    # Log if significant data was dropped
+                    if before_filter > 0 and after_filter < before_filter * 0.5:
+                        logger.warning(
+                            f"{symbol} {date_str}: Zero-price filter removed {before_filter - after_filter}/{before_filter} bars "
+                            f"({(before_filter - after_filter)/before_filter*100:.1f}%) - possible data quality issue"
+                        )
+
                     if not symbol_df.empty:
                         parts.append(symbol_df)
+                    elif original_count > 0:
+                        logger.warning(
+                            f"{symbol} {date_str}: All {original_count} bars filtered out (zero prices or invalid timestamps)"
+                        )
         
             cur += pd.Timedelta(days=1)
 
@@ -528,12 +562,27 @@ class LocalDataHandler:
         # 09:30 = 34200000ms, 16:00 = 57600000ms
         return df[(df['ms_of_day'] >= 34200000) & (df['ms_of_day'] < 57600000)]
     
-    def _read_parquet_safe(self, filepath: Path) -> pd.DataFrame:
-        """Safely read parquet file."""
+    def _read_parquet_safe(self, filepath: Path, date_str: str = None) -> pd.DataFrame:
+        """Safely read parquet file with detailed error reporting."""
         try:
-            return pd.read_parquet(filepath)
+            df = pd.read_parquet(filepath)
+
+            # ✅ FIX: Validate parquet file contents
+            if df.empty:
+                logger.warning(f"Parquet file is empty: {filepath}")
+                return df
+
+            if 'symbol' not in df.columns:
+                logger.error(f"Parquet file missing 'symbol' column: {filepath}, columns: {df.columns.tolist()}")
+                return pd.DataFrame()
+
+            return df
+
         except Exception as e:
-            logger.error(f"Error reading {filepath}: {e}")
+            # ✅ FIX: More detailed error reporting
+            date_info = f" for {date_str}" if date_str else ""
+            logger.error(f"Error reading parquet file{date_info}: {filepath}")
+            logger.error(f"Error details: {type(e).__name__}: {e}")
             return pd.DataFrame()
     
     def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -544,10 +593,30 @@ class LocalDataHandler:
         df = df.copy()
 
         if 'timestamp' in df.columns:
+            original_count = len(df)
+
+            # ✅ FIX: Track timestamp conversion issues
             df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
 
+            nat_from_coerce = df['timestamp'].isna().sum()
+            if nat_from_coerce > 0:
+                logger.warning(
+                    f"Timestamp conversion: {nat_from_coerce}/{original_count} bars have invalid timestamps "
+                    f"that couldn't be parsed (set to NaT)"
+                )
+
             if df['timestamp'].dt.tz is None:
+                # ✅ FIX: Track timezone localization issues
+                before_tz = df['timestamp'].notna().sum()
                 df['timestamp'] = df['timestamp'].dt.tz_localize('US/Eastern', ambiguous='NaT', nonexistent='NaT')
+                after_tz = df['timestamp'].notna().sum()
+
+                nat_from_tz = before_tz - after_tz
+                if nat_from_tz > 0:
+                    logger.warning(
+                        f"Timezone localization: {nat_from_tz} bars had ambiguous/nonexistent timestamps "
+                        f"(e.g., DST transitions) - set to NaT"
+                    )
 
             df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
 
