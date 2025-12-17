@@ -258,7 +258,9 @@ class PatternAnalyzer:
                        acceleration >= cfg['min_acceleration'] and 
                        volume_multiplier >= cfg['volume_multiplier'])
             
-            strength = min(100, (angle / 90) * 50 + (volume_multiplier / 10) * 50) if detected else 0
+            # ✅ IMPROVED: Cap strength score at PARABOLIC_MAX_SCORE
+            raw_strength = (angle / 90) * 50 + (volume_multiplier / 10) * 50 if detected else 0
+            strength = min(self.config.pattern.PARABOLIC_MAX_SCORE, raw_strength)
             
             # ✅ NEW: Log when rejected due to excessive angle
             if not angle_valid and angle > self.config.pattern.PARABOLIC_MAX_ANGLE:
@@ -420,8 +422,11 @@ class PatternAnalyzer:
         total_score += volume.get('strength', 0) * weights['volume']
         total_score += sr.get('strength', 0) * weights['support_resistance']
         
+        # ✅ IMPROVED: Cap total confluence score at CONFLUENCE_MAX_SCORE
+        capped_score = min(pc.CONFLUENCE_MAX_SCORE, total_score)
+        
         return {
             'patterns_detected': patterns_detected,
             'pattern_count': len(patterns_detected),
-            'total_score': min(100, total_score)
+            'total_score': capped_score
         }

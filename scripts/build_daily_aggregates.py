@@ -105,6 +105,18 @@ def build_daily_aggregates(
                 if 'timestamp' in df.columns:
                     df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
                 
+                # ✅ FILTER OUT INVALID PRICES (zero or negative values)
+                # This prevents zero values from being picked up in the min() aggregation
+                df = df[
+                    (df['open'] > 0) & 
+                    (df['high'] > 0) & 
+                    (df['low'] > 0) & 
+                    (df['close'] > 0)
+                ].copy()
+                
+                if df.empty:
+                    continue
+                
                 # Group by symbol and aggregate
                 daily_stats = df.groupby('symbol').agg({
                     'open': 'first',      # First bar open
@@ -135,7 +147,7 @@ def build_daily_aggregates(
             month_df = pd.concat(month_aggregates, ignore_index=True)
             
             # Reorder columns
-            month_df = month_df[[
+            month_df = month_df[ [
                 'date', 'symbol', 'open', 'high', 'low', 'close', 
                 'volume', 'bar_count', 'first_timestamp', 'last_timestamp'
             ]]

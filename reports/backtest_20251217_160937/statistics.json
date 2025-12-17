@@ -1,0 +1,57 @@
+{
+  "total_trades": 23,
+  "winning_trades": 13,
+  "losing_trades": 10,
+  "win_rate": 56.52,
+  "gross_profit": 290.0,
+  "gross_loss": 223.68,
+  "net_profit": 66.33,
+  "avg_win": 22.31,
+  "avg_loss": 22.37,
+  "profit_factor": 1.3,
+  "expectancy": 2.88,
+  "avg_return_pct": 1.53,
+  "median_return_pct": 0.12,
+  "best_return_pct": 50.48,
+  "worst_return_pct": -14.55,
+  "total_return": 5.82,
+  "annualized_return": 104.0,
+  "max_drawdown": 10.89,
+  "max_drawdown_duration_days": 6,
+  "initial_capital": 1007.66,
+  "final_capital": 1066.33,
+  "sharpe_ratio": 0.0,
+  "best_trade": {
+    "symbol": "DTSS",
+    "pnl": 178.7,
+    "return_pct": 50.48
+  },
+  "worst_trade": {
+    "symbol": "RVSNW",
+    "pnl": -56.2,
+    "return_pct": -11.28
+  },
+  "avg_hold_time_minutes": 19.17,
+  "max_hold_time_minutes": 49.0,
+  "min_hold_time_minutes": 3.0,
+  "exit_reasons": {
+    "trailing_stop": {
+      "count": 10,
+      "win_rate": 100.0,
+      "avg_pnl": 28.69
+    },
+    "stop_loss": {
+      "count": 5,
+      "win_rate": 0.0,
+      "avg_pnl": -26.63
+    },
+    "max_hold_time": {
+      "count": 8,
+      "win_rate": 37.5,
+      "avg_pnl": -10.93
+    }
+  },
+  "avg_mae": 15.6,
+  "avg_mfe": 442.82,
+  "exit_efficiency": 2838.59
+}

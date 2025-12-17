@@ -23,9 +23,36 @@ class ScreeningConfig:
     MIN_FLOAT: int = 0  # Ignored in backtest
     MAX_FLOAT: int = 100_000_000  # Ignored in backtest
     MIN_RELATIVE_VOLUME: float = 2.0
-    MIN_ABSOLUTE_VOLUME: int = 100_000
-    ENABLE_RELATIVE_VOLUME: bool = True
+    ENABLE_RELATIVE_VOLUME: bool = False
     RELATIVE_VOLUME_LOOKBACK_DAYS: int = 10
+    
+    # ✅ Daily volume pre-screening (from aggregates)
+    MIN_DAILY_VOLUME: int = 50_000  # Minimum total daily volume for consideration
+    MIN_CUMULATIVE_VOLUME: int = 10_000  # Minimum cumulative intraday volume threshold
+    ENABLE_DAILY_VOLUME_PRESCREEN: bool = True  # Pre-filter using daily aggregates
+    
+    # ✅ Cumulative volume tracking (intraday files)
+    CUMULATIVE_VOLUME: bool = False  # Enable cumulative volume column in intraday data
+
+@dataclass(frozen=True)
+class GapMonitoringConfig:
+    """Gap monitoring frequency configuration for adaptive filtering."""
+    # Monitoring intervals based on gap % progress
+    NEGATIVE_GAP_INTERVAL_MIN: int = 30  # Negative gap %
+    LOW_GAP_INTERVAL_MIN: int = 15       # < 50% of min gap requirement
+    MID_GAP_INTERVAL_MIN: int = 10       # 50-90% of min gap requirement
+    HIGH_GAP_INTERVAL_MIN: int = 5       # >= 90% of min gap requirement
+    QUALIFIED_INTERVAL_MIN: int = 1      # Meets all criteria - pattern analysis active
+    
+    # Threshold percentages (relative to MIN_GAP_PERCENT)
+    LOW_THRESHOLD_PCT: float = 0.50      # 50% of min gap
+    HIGH_THRESHOLD_PCT: float = 0.90     # 90% of min gap
+    DEQUALIFY_THRESHOLD_PCT: float = 0.75  # Falls below 75% - downgrade monitoring
+    
+    # Performance tuning
+    BATCH_SIZE: int = 500                # Symbols per batch for vectorized operations
+    MAX_WORKER_THREADS: int = 4          # Thread pool size for parallel processing
+    AGGREGATE_CACHE_MONTHS: int = 2      # Keep N months of aggregates in memory
 
 @dataclass(frozen=True)
 class SessionConfig:
@@ -40,13 +67,12 @@ class SessionConfig:
     # Regular session
     REGULAR_START_ET: str = "09:30"
     REGULAR_END_ET: str = "16:00"
-    REGULAR_WARMUP_MINUTES: int = 30
+    REGULAR_WARMUP_MINUTES: int = 15
     REGULAR_MIN_BARS: int = 5
     
-    # Backtest-specific
+    # Backtest-specific slippage
     PREMARKET_SLIPPAGE_MULT: float = 2.0
     REGULAR_SLIPPAGE_MULT: float = 1.0
-    PREMARKET_MIN_SESSION_VOLUME: int = 10000
 
 @dataclass(frozen=True)
 class PatternConfig:
@@ -56,11 +82,14 @@ class PatternConfig:
     MAX_PULLBACK_PERCENT: float = 40.0
     PATTERN_WINDOW_SIZES: List[int] = field(default_factory=lambda: [5, 15, 30])
 
-    PARABOLIC_MIN_ANGLE: float = -999
+    # Parabolic pattern thresholds
+    PARABOLIC_MIN_ANGLE: float = -999.0
     PARABOLIC_MAX_ANGLE: float = 999.0
-    PARABOLIC_MIN_ACCELERATION: float = -999
-    PARABOLIC_MIN_VOL_MULTIPLIER: float = -999
+    PARABOLIC_MIN_ACCELERATION: float = -999.0
+    PARABOLIC_MIN_VOL_MULTIPLIER: float = -999.0
+    PARABOLIC_MAX_SCORE: float = 100.0
 
+    # Breakout pattern thresholds
     BREAKOUT_LOOKBACK: int = 20
     BREAKOUT_PRICE_BUFFER_PCT: float = 0.005
     BREAKOUT_VOL_MULTIPLIER: float = 0.5
@@ -73,6 +102,7 @@ class PatternConfig:
     CONFLUENCE_LARGE_GAP_MIN_SCORE: float = 10.0
     
     CONFLUENCE_NORMAL_GAP_MIN_SCORE: float = 15.0
+    CONFLUENCE_MAX_SCORE: float = 25.0
     CONFLUENCE_MIN_PATTERNS: int = 1
     
     # Pattern confluence weights (must sum to 1.0 for interpretability)
@@ -85,7 +115,7 @@ class PatternConfig:
 @dataclass(frozen=True)
 class RiskConfig:
     """Risk management parameters - percentage-based with ATR trailing stops."""
-    STOP_LOSS_PERCENT_OF_ACCOUNT: float = 2.0
+    STOP_LOSS_PERCENT_OF_ACCOUNT: float = 4.0
     MAX_HOLD_TIME_MINUTES: int = 30
     
     # ATR-based trailing stop parameters
@@ -95,11 +125,12 @@ class RiskConfig:
     ATR_TRAILING_MIN_PROFIT_PCT: float = 1.0
     
     # Position sizing and portfolio limits
-    MAX_POSITION_SIZE_PERCENT: float = 25.0
+    MAX_POSITION_SIZE_PERCENT: float = 75.0
     MAX_DAILY_LOSS_PERCENT: float = 6.0
     MAX_CONCURRENT_POSITIONS: int = 3
     MAX_SECTOR_EXPOSURE: float = 0.50
     MAX_DRAWDOWN_PERCENT: float = 20.0
+    MAX_PORTFOLIO_HEAT_PERCENT: float = 6.0
 
 @dataclass(frozen=True)
 class ReentryConfig:
@@ -123,7 +154,7 @@ class SystemConfig:
     DATA_UPDATE_INTERVAL: int = 1
     MAX_API_RETRIES: int = 3
     API_RETRY_DELAY: int = 2
-    LOG_LEVEL: str = 'INFO'
+    LOG_LEVEL: str = 'DEBUG'
     DATABASE_PATH: str = 'trading_system.db'
     BATCH_SIZE: int = 100
     MAX_RETRIES: int = 3
@@ -135,11 +166,11 @@ class SystemConfig:
     # Memory management
     FORCE_GARBAGE_COLLECTION: bool = True
     GC_FREQUENCY_DAYS: int = 1
-    
-    # Day cache limit - each day file is ~135 MiB
     MAX_DAY_CACHE_SIZE: int = 2  # Only 2 days (~270 MiB)
-    
     CLEAR_CACHE_BETWEEN_DAYS: bool = True
+    USE_FILE_INDEX_CACHE: bool = True  # Enable pre-built file index
+
+    REPORTS_DIR: str = "reports"  # All backtest outputs go here
 
 @dataclass(frozen=True)
 class MarketContextConfig:
@@ -180,8 +211,8 @@ class MarketContextConfig:
 class BacktestConfig:
     """Backtest configuration (intraday only)."""
     START_DATE: str = '2024-01-03'
-    END_DATE: str = '2024-08-07'
-    INITIAL_CAPITAL: float = 2500.0
+    END_DATE: str = '2024-01-31'
+    INITIAL_CAPITAL: float = 1000.0
 
     BASE_DATA_DIR: str = r'D:\trading_data'
     DATA_DIR: str = r'D:\trading_data'
@@ -200,20 +231,25 @@ class BacktestConfig:
     AUTO_CREATE_STORAGE_DIRS: bool = False
     ALLOW_FIRST_DAY_WITHOUT_PREV: bool = False
 
-    FAST_MODE: bool = True
+    FAST_MODE: bool = False
     LOG_LEVEL_OVERRIDE: Optional[str] = None
     ENABLE_REENTRY: bool = False
-    SIMPLE_STOPS: bool = True
+    SIMPLE_STOPS: bool = False
     
     LOG_DAILY_PROGRESS: bool = True
     LOG_SCREENING_DETAILS: bool = True
-    LOG_PATTERN_ANALYSIS: bool = False
+    LOG_PATTERN_ANALYSIS: bool = True
+
+    ANALYSIS_WINDOW_ENABLED: bool = True
+    ANALYSIS_WINDOW_START_ET: str = "06:00"  # 6:00 AM Eastern Time
+    ANALYSIS_WINDOW_END_ET: str = "12:00"    # 12:00 PM Eastern Time
 
 @dataclass(frozen=True)
 class TradingConfig:
     """Central configuration for the trading system."""
     api: APIConfig = field(default_factory=APIConfig)
     screening: ScreeningConfig = field(default_factory=ScreeningConfig)
+    gap_monitoring: GapMonitoringConfig = field(default_factory=GapMonitoringConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
     pattern: PatternConfig = field(default_factory=PatternConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)

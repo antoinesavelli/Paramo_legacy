@@ -1,0 +1,9 @@
+date,universe_total,universe_with_data,universe_without_data,gaps_total,gaps_prev_day,gaps_lookback_days,gap_min,gap_max,gap_mean,gap_median,gap_range_0-5%,gap_range_5-10%,gap_range_10-20%,gap_range_20-50%,gap_range_50%+,top_gapper_symbol,top_gapper_pct,top_gapper_price,screen_initial,screen_after_gap,screen_after_price,screen_after_volume,screen_after_rel_volume,screen_passed,warmup_passed,warmup_failed,warmup_required_mins,warmup_min_bars,patterns_valid,patterns_failed,risk_tradeable,risk_rejected
+2024-01-03,3950,70,30,2806,2024-01-02,0,-100.0,inf,inf,-0.27846534653466404,2414,170,40,7,164,NYAX,inf,20.335,2806,164,93,3,3,3,3,0,15,5,0,0,0,0
+2024-01-04,3950,70,30,2783,2024-01-03,0,-100.0,inf,inf,0.0,2371,165,38,11,193,KPLTW,inf,0.0094,2783,193,101,5,5,5,5,0,15,5,0,0,0,0
+2024-01-05,3950,71,29,2791,2024-01-04,0,-100.0,inf,inf,-0.13517166801838346,2331,173,37,4,232,QSIAW,inf,0.2144,2791,232,120,7,7,7,7,0,15,5,0,0,0,0
+2024-01-08,3950,72,28,2796,2024-01-05,2,-100.0,inf,inf,0.0,2392,147,25,7,216,EAI,inf,0.0,2796,216,92,0,0,0,0,0,0,0,0,0,0,0
+2024-01-09,3950,72,28,2783,2024-01-08,0,-100.0,inf,inf,-0.4950495049505065,2359,188,36,13,181,EAI,inf,21.64,2783,181,93,2,2,2,2,0,15,5,0,0,0,0
+2024-01-10,3950,69,31,2785,2024-01-09,0,-100.0,inf,inf,0.0,2322,176,47,10,218,CRGOW,inf,0.15,2785,218,111,2,2,2,2,0,15,5,0,0,0,0
+2024-01-11,3950,72,28,2791,2024-01-10,0,-100.0,inf,inf,-0.17591251717352152,2343,200,46,12,181,PRE,inf,4.52,2791,181,88,2,2,2,2,0,15,5,0,0,0,0
+2024-01-12,3950,67,33,2765,2024-01-11,0,-100.0,inf,inf,0.14556048467191637,2365,161,35,15,174,HUIZ,inf,0.85,2765,174,86,1,1,1,0,1,15,5,0,0,0,0

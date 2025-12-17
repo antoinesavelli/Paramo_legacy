@@ -500,7 +500,7 @@ class TradeSimulator:
             'days_held': 0,
             'hold_time_minutes': hold_time_minutes,
             'highest_price': highest_price,
-            'mae': ((entry - min(bars_fwd['low'])) / entry * 100) if not bars_fwd.empty else 0,
+            'mae': ((min(bars_fwd['low']) - entry) / entry * 100) if not bars_fwd.empty else 0,
             'mfe': ((max(bars_fwd['high']) - entry) / entry * 100) if not bars_fwd.empty else 0,
         }
     

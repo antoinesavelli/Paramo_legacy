@@ -1,0 +1,3 @@
+date,symbol,gap_percent,bar_count,passed_warmup,reason
+2024-01-04,ACON,1220.2042304886945,386,True,passed
+2024-01-04,NESR,-100.0,67,True,passed

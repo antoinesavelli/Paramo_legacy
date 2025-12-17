@@ -1,0 +1,26 @@
+
+=== INTRADAY BACKTEST RESULTS ===
+Performance
+  Initial Capital: $1,000.00
+  Final Capital:   $1,031.41
+  Total Return:    3.14%
+  Annualized:      47.64%
+  Max Drawdown:    10.87%
+
+Trades
+  Total Trades:    21
+  Win Rate:        52.38%
+  Profit Factor:   1.14
+  Net Profit:      $31.41
+  Avg Win:         $22.65
+  Avg Loss:        $21.77
+
+Hold Times
+  Average:  19.1 minutes
+  Maximum:  49.0 minutes
+  Minimum:  3.0 minutes
+
+Exit Reasons
+  max_hold_time: 8 trades (37.5% win rate, avg P&L $-10.53)
+  trailing_stop: 8 trades (100.0% win rate, avg P&L $30.76)
+  stop_loss: 5 trades (0.0% win rate, avg P&L $-26.09)

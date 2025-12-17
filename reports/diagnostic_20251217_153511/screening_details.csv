@@ -1,0 +1,9 @@
+date,symbol,gap_percent,last_price,volume,passed_screening,stage
+2024-01-03,SOHU,-100.0,9.88,110434,True,screening_passed
+2024-01-03,NESR,-100.0,7.0,376184,True,screening_passed
+2024-01-03,FEBO,inf,5.31,105974,True,screening_passed
+2024-01-04,NESR,-100.0,7.2,922500,True,screening_passed
+2024-01-04,ACON,1220.2042304886945,2.92,1557418,True,screening_passed
+2024-01-04,CINT,-100.0,5.06,178988,True,screening_passed
+2024-01-04,IZM,-100.0,10.53,376580,True,screening_passed
+2024-01-04,DIBS,-100.0,4.91,178999,True,screening_passed

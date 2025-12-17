@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Union
 from datetime import datetime, timedelta
 import pandas as pd
 import collections
+from pathlib import Path
 
 from utils.logging import get_logger
 from core.risk_manager import calc_atr_stop
@@ -18,6 +19,7 @@ from screener.helpers import (
     BacktestRelativeVolumeCalculator, 
     DiagnosticCreator
 )
+from data_handler.aggregate_handler import AggregateDataHandler
 
 
 @dataclass
@@ -42,7 +44,7 @@ class UnifiedScreener:
         data_handler, 
         pattern_analyzer: PatternAnalyzer, 
         news_integration=None,
-        market_context=None,  # ✅ NEW: Add market context
+        market_context=None,
         logger=None, 
         is_live=False
     ):
@@ -50,9 +52,9 @@ class UnifiedScreener:
         self.data = data_handler
         self.pa = pattern_analyzer
         self.news = news_integration
-        self.market_context = market_context  # ✅ NEW
+        self.market_context = market_context
         self.logger = logger or get_logger(__name__, component="screener")
-        self.is_live = is_live  # ✅ NEW: Store mode
+        self.is_live = is_live
         
         # ✅ Initialize appropriate RVOL calculator based on mode
         if is_live:
@@ -61,6 +63,10 @@ class UnifiedScreener:
             self.rvol_calculator = BacktestRelativeVolumeCalculator(config, data_handler, self.logger)
         
         self.diagnostic_creator = DiagnosticCreator(config)
+        
+        # ✅ Initialize aggregate handler for volume pre-screening
+        aggregate_dir = Path(config.backtest.BASE_DATA_DIR) / "daily_aggregates"
+        self.aggregate_handler = AggregateDataHandler(str(aggregate_dir))
     
     def screen_symbols(
         self, 
@@ -88,6 +94,7 @@ class UnifiedScreener:
         
         stats = {
             "candidates_in": len(candidates_df),
+            "after_daily_volume_filter": 0,
             "after_relative_volume_filter": 0,
             "processed": 0,
             "pattern_valid": 0,
@@ -100,6 +107,18 @@ class UnifiedScreener:
         
         # Sort by gap % (highest first)
         candidates_df = candidates_df.sort_values('gap_percent', ascending=False)
+        
+        # ✅ Apply daily volume pre-screen using aggregates
+        if self.config.screening.ENABLE_DAILY_VOLUME_PRESCREEN:
+            candidates_df = self._apply_daily_volume_filter(
+                candidates_df, day, stats
+            )
+            
+            if candidates_df.empty:
+                self.logger.warning("All candidates filtered by daily volume pre-screen")
+                return {"signals": signals, "diagnostics": diagnostics, "stats": stats}
+        else:
+            stats["after_daily_volume_filter"] = len(candidates_df)
         
         # Apply RVOL filter if enabled
         if self.config.screening.ENABLE_RELATIVE_VOLUME:
@@ -146,7 +165,36 @@ class UnifiedScreener:
         premarket_end_utc = premarket_end_et.tz_convert('UTC')
         session_end_utc = session_end_et.tz_convert('UTC')
         
-        # ✅ NEW: Check market context BEFORE analyzing candidates
+        # ✅ NEW: Define analysis time window (for faster backtesting)
+        analysis_window_enabled = getattr(self.config.backtest, 'ANALYSIS_WINDOW_ENABLED', False)
+        
+        if analysis_window_enabled and not is_live:
+            window_start_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_START_ET', '06:00')
+            window_end_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_END_ET', '12:00')
+            
+            window_start = datetime.strptime(window_start_str, "%H:%M").time()
+            window_end = datetime.strptime(window_end_str, "%H:%M").time()
+            
+            analysis_window_start_et = pd.Timestamp(
+                day.replace(hour=window_start.hour, minute=window_start.minute),
+                tz='US/Eastern'
+            )
+            analysis_window_end_et = pd.Timestamp(
+                day.replace(hour=window_end.hour, minute=window_end.minute),
+                tz='US/Eastern'
+            )
+            analysis_window_start_utc = analysis_window_start_et.tz_convert('UTC')
+            analysis_window_end_utc = analysis_window_end_et.tz_convert('UTC')
+            
+            self.logger.info(
+                f"[ANALYSIS WINDOW] Enabled: {window_start_str} - {window_end_str} ET "
+                f"(candidates outside window will be skipped)"
+            )
+        else:
+            analysis_window_start_utc = None
+            analysis_window_end_utc = None
+        
+        # ✅ Check market context BEFORE analyzing candidates
         if self.market_context:
             # Update context (for backtest, pass day; for live, it updates from API)
             if not self.is_live:
@@ -174,6 +222,7 @@ class UnifiedScreener:
             symbol = str(row['symbol'])
             gap_pct = float(row['gap_percent'])
             rel_vol = row.get('relative_volume', None)
+            daily_volume = row.get('daily_volume', None)
             stats["processed"] += 1
             
             # Optional news gate
@@ -200,33 +249,37 @@ class UnifiedScreener:
                 stats["reject_reasons"]["empty_bars"] += 1
                 continue
             
-            # Bar count checks
+
+            # Bar count checks are ONLY for pattern analysis minimum
             if premarket_enabled and len(bars) < min_bars:
                 diagnostics.append({
                     "date": pd.Timestamp(day).date(),
                     "symbol": symbol,
                     "gap_percent": gap_pct,
                     "relative_volume": rel_vol,
+                    "daily_volume": daily_volume,
                     "phase": "reject",
-                    "reason": "premarket_min_bars",
+                    "reason": "insufficient_bars_for_pattern",
                     "rows": len(bars),
                     "min_bars": min_bars
                 })
-                stats["reject_reasons"]["premarket_min_bars"] += 1
+                stats["reject_reasons"]["insufficient_bars_for_pattern"] += 1
                 continue
             
+            # Warmup check is ONLY for pattern analysis minimum
             if len(bars) < warmup:
                 diagnostics.append({
                     "date": pd.Timestamp(day).date(),
                     "symbol": symbol,
                     "gap_percent": gap_pct,
                     "relative_volume": rel_vol,
+                    "daily_volume": daily_volume,
                     "phase": "reject",
-                    "reason": "warmup_short",
+                    "reason": "insufficient_bars_for_pattern",
                     "rows": len(bars),
                     "warmup": warmup
                 })
-                stats["reject_reasons"]["warmup_short"] += 1
+                stats["reject_reasons"]["insufficient_bars_for_pattern"] += 1
                 continue
             
             # Validate columns
@@ -240,6 +293,7 @@ class UnifiedScreener:
                     "symbol": symbol,
                     "gap_percent": gap_pct,
                     "relative_volume": rel_vol,
+                    "daily_volume": daily_volume,
                     "phase": "reject",
                     "reason": "bars_missing_columns",
                     "missing": ",".join(missing_cols)
@@ -247,21 +301,61 @@ class UnifiedScreener:
                 stats["reject_reasons"]["bars_missing_columns"] += 1
                 continue
             
-            # Check for NaN in warmup period
+            # Check for NaN in warmup period (pattern analysis window)
             if bars.iloc[:warmup].isna().any().any():
                 diagnostics.append({
                     "date": pd.Timestamp(day).date(),
                     "symbol": symbol,
                     "gap_percent": gap_pct,
                     "relative_volume": rel_vol,
+                    "daily_volume": daily_volume,
                     "phase": "reject",
-                    "reason": "nan_in_warmup"
+                    "reason": "nan_in_pattern_window"
                 })
-                stats["reject_reasons"]["nan_in_warmup"] += 1
+                stats["reject_reasons"]["nan_in_pattern_window"] += 1
                 continue
             
-            # Pattern analysis
+            # Pattern analysis (uses warmup period for initial pattern detection)
             bars_warm = bars.iloc[:warmup].copy()
+            
+            # ✅ NEW: Calculate potential entry timestamp (after warmup)
+            entry_row = bars.iloc[warmup - 1]
+            entry_ts = entry_row['timestamp']
+            
+            # ✅ NEW: Check if entry time falls within analysis window
+            if analysis_window_start_utc is not None and analysis_window_end_utc is not None:
+                # ✅ FIXED: Handle timezone-aware timestamp properly
+                if isinstance(entry_ts, pd.Timestamp):
+                    # Already a pandas Timestamp, ensure it's in UTC
+                    if entry_ts.tz is None:
+                        entry_ts_utc = entry_ts.tz_localize('UTC')
+                    else:
+                        entry_ts_utc = entry_ts.tz_convert('UTC')
+                else:
+                    # Convert to pandas Timestamp with UTC timezone
+                    entry_ts_utc = pd.Timestamp(entry_ts).tz_localize('UTC')
+                
+                if entry_ts_utc < analysis_window_start_utc or entry_ts_utc >= analysis_window_end_utc:
+                    entry_et = entry_ts_utc.tz_convert('US/Eastern')
+                    diagnostics.append({
+                        "date": pd.Timestamp(day).date(),
+                        "symbol": symbol,
+                        "gap_percent": gap_pct,
+                        "relative_volume": rel_vol,
+                        "daily_volume": daily_volume,
+                        "phase": "reject",
+                        "reason": "outside_analysis_window",
+                        "entry_time_et": entry_et.strftime('%H:%M:%S'),
+                        "window_start_et": window_start_str,
+                        "window_end_et": window_end_str
+                    })
+                    stats["reject_reasons"]["outside_analysis_window"] += 1
+                    self.logger.debug(
+                        f"[SKIP] {symbol} - Entry time {entry_et.strftime('%H:%M:%S')} ET "
+                        f"outside analysis window ({window_start_str} - {window_end_str})"
+                    )
+                    continue
+            
             pa = self.pa.analyze_pattern(
                 symbol, 
                 bars=bars_warm, 
@@ -277,15 +371,14 @@ class UnifiedScreener:
                     relative_volume=rel_vol,
                     pattern_data=pa
                 )
+                diagnostic['daily_volume'] = daily_volume
                 diagnostics.append(diagnostic)
                 stats["reject_reasons"]["pattern_invalid"] += 1
                 continue
             
             # Valid signal - calculate entry and stop
             stats["pattern_valid"] += 1
-            entry_row = bars.iloc[warmup - 1]
             entry_price = float(entry_row['close'])
-            entry_ts = entry_row['timestamp']
             
             is_premarket_entry = premarket_enabled and entry_ts < premarket_end_utc
             
@@ -297,12 +390,14 @@ class UnifiedScreener:
                 fallback_pct=0.03
             )
             
+            # Log without warmup volume (not used for filtering anymore)
             self.logger.info(
                 f"[SIGNAL] {symbol} | "
                 f"Gap: {gap_pct:+.2f}% | "
                 f"Entry: ${entry_price:.2f} | "
                 f"Stop: ${stop_price:.2f} | "
                 f"Pattern Score: {pa.get('pattern_strength', 0):.1f} | "
+                f"Daily Vol: {daily_volume:,.0f} | "
                 f"Premarket: {is_premarket_entry}"
             )
             
@@ -318,12 +413,67 @@ class UnifiedScreener:
                     "last_price": float(row['last_price']),
                     "open_price": float(row.get('open_price', entry_price)),
                     "prev_close": float(row.get('prev_close', entry_price / (1 + gap_pct/100))),
-                    "is_premarket": is_premarket_entry
+                    "is_premarket": is_premarket_entry,
+                    "daily_volume": int(daily_volume) if daily_volume else None
                 }
             ))
             stats["signals"] += 1
         
         return {"signals": signals, "diagnostics": diagnostics, "stats": stats}
+    
+    def _apply_daily_volume_filter(
+        self,
+        candidates_df: pd.DataFrame,
+        day: datetime,
+        stats: Dict
+    ) -> pd.DataFrame:
+        """
+        Apply daily volume pre-screen using aggregate data.
+        
+        This checks total daily volume BEFORE loading intraday data,
+        which is much faster than loading bars for every candidate.
+        """
+        min_daily_vol = self.config.screening.MIN_DAILY_VOLUME
+        
+        self.logger.info(
+            f"[DAILY VOLUME PRE-SCREEN] Filtering {len(candidates_df)} candidates "
+            f"(min: {min_daily_vol:,})"
+        )
+        
+        # Get all symbols' daily stats from aggregates
+        day_aggregates = self.aggregate_handler.get_day_aggregates(day)
+        
+        if day_aggregates is None or day_aggregates.empty:
+            self.logger.warning(f"No aggregate data available for {day.date()} - skipping volume filter")
+            stats["after_daily_volume_filter"] = len(candidates_df)
+            return candidates_df
+        
+        # Create volume lookup
+        volume_lookup = day_aggregates.set_index('symbol')['volume'].to_dict()
+        
+        # Add daily volume to candidates
+        candidates_df = candidates_df.copy()
+        candidates_df['daily_volume'] = candidates_df['symbol'].map(volume_lookup)
+        
+        # Filter by minimum daily volume
+        pre_filter = len(candidates_df)
+        candidates_df = candidates_df[
+            (candidates_df['daily_volume'].notna()) &
+            (candidates_df['daily_volume'] >= min_daily_vol)
+        ]
+        stats["after_daily_volume_filter"] = len(candidates_df)
+        
+        filtered_count = pre_filter - len(candidates_df)
+        
+        self.logger.info(
+            f"[FILTER] Daily volume pre-screen | "
+            f"Before: {pre_filter} | After: {len(candidates_df)} | Filtered: {filtered_count}"
+        )
+        
+        if filtered_count > 0:
+            stats["reject_reasons"]["low_daily_volume"] = filtered_count
+        
+        return candidates_df
     
     def _apply_rvol_filter(
         self, 

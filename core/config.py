@@ -25,7 +25,9 @@ class ScreeningConfig:
     MIN_FLOAT: int = 0
     MAX_FLOAT: int = 100_000_000
     MIN_RELATIVE_VOLUME: float = 2.0
-    MIN_ABSOLUTE_VOLUME: int = 200_000
+    MIN_
+    
+    _VOLUME: int = 200_000
     MAX_SPREAD_PERCENT: float = 2.0
     MIN_DAILY_VOLATILITY: float = 10.0
 
