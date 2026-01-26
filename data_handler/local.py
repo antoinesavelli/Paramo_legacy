@@ -10,11 +10,16 @@ Handles:
 - Intraday bar loading
 - Day-level data caching
 - Universe management
+
+MEMORY OPTIMIZATION:
+- Only essential columns loaded from parquet files
+- Day cache limited to 2 days max
+- Explicit cleanup of unused data
 """
 
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import re
 import logging
 from pathlib import Path
@@ -26,10 +31,11 @@ logger = logging.getLogger("data_handler.local")
 class LocalDataHandler:
     """Handles local market data for backtesting with hierarchical YYYY/MM/DD structure."""
 
+    # ✅ OPTIMIZED: Define essential columns only
     REQUIRED_COLUMNS = [
         "symbol", "timestamp", "open", "high", "low", "close", "volume"
     ]
-    OPTIONAL_COLUMNS = ["count", "vwap", "ms_of_day", "date"]
+    OPTIONAL_COLUMNS = ["count", "vwap", "ms_of_day", "date", "cumulative_volume"]
     COLUMN_ORDER = ["symbol", "timestamp", "open", "high", "low", "close", "volume", "count", "vwap"]
 
     def __init__(self, config, data_dir: str = None):
@@ -43,7 +49,7 @@ class LocalDataHandler:
         self.config = config
         self.data_dir = Path(data_dir)
         
-        # Day cache - only cache mechanism needed
+        # ✅ Day cache - keep only 2 days max for memory efficiency
         self._day_cache = OrderedDict()
         self._day_cache_limit = getattr(
             self.config.system, 
@@ -138,25 +144,23 @@ class LocalDataHandler:
                             date_str = f"{date_compact[0:4]}-{date_compact[4:6]}-{date_compact[6:8]}"
                             
                             try:
-                                df = pd.read_parquet(file)
-                                if 'symbol' in df.columns:
-                                    symbols = set(df['symbol'].dropna().unique())
-                                    symbols = {s for s in symbols if s is not None and isinstance(s, str)}
+                                # ✅ OPTIMIZED: Only load symbol column for indexing
+                                df = pd.read_parquet(file, columns=['symbol'])
+                                symbols = set(df['symbol'].dropna().unique())
+                                symbols = {s for s in symbols if s is not None and isinstance(s, str)}
+                                
+                                if symbols:
+                                    if date_str not in index:
+                                        index[date_str] = set()
+                                    index[date_str].update(symbols)
+                                    successful_files += 1
                                     
-                                    if symbols:
-                                        if date_str not in index:
-                                            index[date_str] = set()
-                                        index[date_str].update(symbols)
-                                        successful_files += 1
-                                        
-                                        if successful_files % 50 == 0:
-                                            logger.info(f"  Progress: {successful_files} files indexed...")
-                                    else:
-                                        logger.warning(f"File {file} has no valid symbols")
-                                        corrupted_files += 1
+                                    if successful_files % 50 == 0:
+                                        logger.info(f"  Progress: {successful_files} files indexed...")
                                 else:
-                                    logger.warning(f"File {file} missing 'symbol' column")
+                                    logger.warning(f"File {file} has no valid symbols")
                                     corrupted_files += 1
+                                    
                             except Exception as e:
                                 logger.error(f"Error reading {file}: {e}")
                                 corrupted_files += 1
@@ -175,16 +179,30 @@ class LocalDataHandler:
         
         return index
     
-    def _get_day_df(self, date_str: str) -> pd.DataFrame:
+    def _get_day_df(self, date_str: str, columns: Optional[List[str]] = None) -> pd.DataFrame:
         """
         Load all symbols for a specific date.
         
         Uses LRU cache for performance.
+        
+        Args:
+            date_str: Date in YYYY-MM-DD format
+            columns: Optional list of columns to load (None = load all)
         """
+        # ✅ OPTIMIZATION: Cache key includes columns to avoid loading unnecessary data
+        cache_key = date_str
+        
         # Check cache first
-        if date_str in self._day_cache:
-            self._day_cache.move_to_end(date_str)
-            return self._day_cache[date_str]
+        if cache_key in self._day_cache:
+            self._day_cache.move_to_end(cache_key)
+            cached_df = self._day_cache[cache_key]
+            
+            # If specific columns requested, filter cached data
+            if columns and not cached_df.empty:
+                available_cols = [col for col in columns if col in cached_df.columns]
+                return cached_df[available_cols] if available_cols else cached_df
+            
+            return cached_df
         
         if date_str in self._missing_days_cache:
             return pd.DataFrame()
@@ -205,16 +223,20 @@ class LocalDataHandler:
                 self._missing_days_cache.add(date_str)
                 return pd.DataFrame()
             
-            df = self._read_parquet_safe(filepath)
+            # ✅ OPTIMIZED: Load only requested columns
+            df = self._read_parquet_safe(filepath, columns=columns)
             
             if not df.empty:
                 df = self._normalize_columns(df)
                 
-                # LRU cache eviction
+                # ✅ LRU cache eviction with explicit cleanup
                 if len(self._day_cache) >= self._day_cache_limit:
-                    self._day_cache.popitem(last=False)
+                    evicted_key, evicted_df = self._day_cache.popitem(last=False)
+                    rows_freed = len(evicted_df)
+                    del evicted_df  # Explicit cleanup
+                    logger.debug(f"Evicted day cache: {evicted_key} ({rows_freed:,} rows)")
                 
-                self._day_cache[date_str] = df
+                self._day_cache[cache_key] = df
             else:
                 self._missing_days_cache.add(date_str)
             
@@ -265,6 +287,9 @@ class LocalDataHandler:
         if start is None or end is None:
             return pd.DataFrame()
         
+        # ✅ OPTIMIZED: Define columns needed for bars
+        needed_cols = ['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
+        
         cur = pd.Timestamp(start).normalize()
         end_ts = pd.Timestamp(end).normalize()
         parts = []
@@ -276,7 +301,7 @@ class LocalDataHandler:
                 cur += pd.Timedelta(days=1)
                 continue
             
-            day_df = self._get_day_df(date_str)
+            day_df = self._get_day_df(date_str, columns=needed_cols)
             if not day_df.empty and 'symbol' in day_df.columns:
                 symbol_df = day_df[day_df['symbol'] == symbol]
                 if not symbol_df.empty:
@@ -317,14 +342,13 @@ class LocalDataHandler:
 
         try:
             if uni_path.exists():
-                uni = pd.read_parquet(uni_path)
+                # ✅ OPTIMIZED: Only load symbol column
+                uni = pd.read_parquet(uni_path, columns=['symbol'])
                 uni = self._normalize_columns(uni)
                 if not uni.empty:
-                    col = 'symbol' if 'symbol' in uni.columns else 'ticker'
-                    if col in uni.columns:
-                        out = uni[[col]].dropna().drop_duplicates().reset_index(drop=True)
-                        logger.info(f"Loaded universe from file: {len(out)} symbols")
-                        return out.rename(columns={col: 'symbol'})
+                    out = uni[['symbol']].dropna().drop_duplicates().reset_index(drop=True)
+                    logger.info(f"Loaded universe from file: {len(out)} symbols")
+                    return out
         except Exception as e:
             logger.debug(f"Could not load universe file: {e}")
 
@@ -370,6 +394,9 @@ class LocalDataHandler:
         if end_dt.hour == 0 and end_dt.minute == 0:
             end_dt = end_dt.replace(hour=20, minute=0)
 
+        # ✅ OPTIMIZED: Load only needed columns
+        needed_cols = ['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume', 'cumulative_volume']
+        
         cur = start_dt.normalize()
         end_ts = end_dt.normalize()
         parts = []
@@ -381,7 +408,7 @@ class LocalDataHandler:
                 cur += pd.Timedelta(days=1)
                 continue
         
-            day_df = self._get_day_df(date_str)
+            day_df = self._get_day_df(date_str, columns=needed_cols)
             if not day_df.empty and 'symbol' in day_df.columns:
                 symbol_df = day_df[day_df['symbol'] == symbol]
                 if not symbol_df.empty:
@@ -410,11 +437,9 @@ class LocalDataHandler:
         if limit:
             df_all = df_all.tail(limit)
 
-        # ✅ CHANGED: Return cumulative_volume if it exists in the data (already pre-computed in parquet files)
-        # No on-the-fly calculation needed - it's either in the file or it's not
+        # Return columns that exist
         base_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         
-        # Check if cumulative_volume exists in the data
         if not df_all.empty and 'cumulative_volume' in df_all.columns:
             return_cols = base_cols + ['cumulative_volume']
         else:
@@ -468,10 +493,36 @@ class LocalDataHandler:
         # 09:30 = 34200000ms, 16:00 = 57600000ms
         return df[(df['ms_of_day'] >= 34200000) & (df['ms_of_day'] < 57600000)]
     
-    def _read_parquet_safe(self, filepath: Path) -> pd.DataFrame:
-        """Safely read parquet file."""
+    def _read_parquet_safe(self, filepath: Path, columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """
+        Safely read parquet file with optional column filtering.
+        
+        Args:
+            filepath: Path to parquet file
+            columns: Optional list of columns to load
+        """
         try:
-            return pd.read_parquet(filepath)
+            if columns:
+                # ✅ OPTIMIZED: Load only specified columns
+                try:
+                    # Check which columns actually exist in the file
+                    import pyarrow.parquet as pq
+                    schema = pq.read_schema(filepath)
+                    available_cols = schema.names
+                    cols_to_load = [col for col in columns if col in available_cols]
+                    
+                    if cols_to_load:
+                        return pd.read_parquet(filepath, columns=cols_to_load)
+                    else:
+                        # None of the requested columns exist, load all
+                        return pd.read_parquet(filepath)
+                        
+                except ImportError:
+                    # PyArrow not available, try loading with pandas
+                    return pd.read_parquet(filepath, columns=columns)
+            else:
+                return pd.read_parquet(filepath)
+                
         except Exception as e:
             logger.error(f"Error reading {filepath}: {e}")
             return pd.DataFrame()
@@ -492,6 +543,23 @@ class LocalDataHandler:
             df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
 
         return df
+    
+    def clear_cache(self):
+        """Clear all caches and free memory."""
+        days_cleared = len(self._day_cache)
+        total_rows = sum(len(df) for df in self._day_cache.values())
+        self._day_cache.clear()
+        logger.info(f"Cleared day cache: {days_cleared} day(s), {total_rows:,} rows freed")
+    
+    def get_cache_info(self) -> Dict:
+        """Get information about current cache state."""
+        return {
+            'cached_days': list(self._day_cache.keys()),
+            'cache_size': len(self._day_cache),
+            'cache_limit': self._day_cache_limit,
+            'total_rows': sum(len(df) for df in self._day_cache.values()),
+            'missing_days_cached': len(self._missing_days_cache)
+        }
     
     def diagnose_data_files(self) -> Dict:
         """
@@ -537,7 +605,8 @@ class LocalDataHandler:
                     date_str = f"{date_compact[0:4]}-{date_compact[4:6]}-{date_compact[6:8]}"
                     
                     try:
-                        df = pd.read_parquet(file)
+                        # ✅ OPTIMIZED: Only load symbol column for diagnostics
+                        df = pd.read_parquet(file, columns=['symbol'])
                         
                         if df.empty:
                             report['empty_files'].append({

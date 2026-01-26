@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 import numpy as np
+import pandas as pd
 
 
 def _max_drawdown(equity: List[float]) -> Dict[str, float]:
@@ -221,6 +222,179 @@ def compute_statistics(
         'avg_mfe': avg_mfe,  # Average Max Favorable Excursion
         'exit_efficiency': efficiency,  # % of favorable move captured
     }
+
+
+def generate_daily_performance_csv(
+    trades: List[Dict],
+    equity_curve: List[Dict],
+    initial_capital: float,
+    output_path: str
+) -> None:
+    """
+    Generate a daily performance CSV with account balance and trading statistics.
+    
+    Args:
+        trades: List of trade dictionaries
+        equity_curve: List of daily equity snapshots
+        initial_capital: Starting capital
+        output_path: Path to save the CSV file
+    """
+    if not equity_curve:
+        return
+    
+    # Create DataFrame from equity curve
+    daily_df = pd.DataFrame(equity_curve)
+    
+    # Ensure date column is datetime
+    daily_df['date'] = pd.to_datetime(daily_df['date'])
+    
+    # Initialize columns
+    daily_df['initial_balance'] = 0.0
+    daily_df['final_balance'] = daily_df['equity']
+    daily_df['daily_pnl'] = 0.0
+    daily_df['daily_return_pct'] = 0.0
+    daily_df['num_trades'] = 0
+    daily_df['num_winners'] = 0
+    daily_df['num_losers'] = 0
+    daily_df['gross_profit'] = 0.0
+    daily_df['gross_loss'] = 0.0
+    daily_df['win_rate'] = 0.0
+    daily_df['largest_win'] = 0.0
+    daily_df['largest_loss'] = 0.0
+    daily_df['avg_win'] = 0.0
+    daily_df['avg_loss'] = 0.0
+    daily_df['cumulative_pnl'] = 0.0
+    daily_df['drawdown_pct'] = 0.0
+    daily_df['peak_balance'] = initial_capital
+    
+    # Calculate initial balance (previous day's final balance)
+    daily_df['initial_balance'] = daily_df['final_balance'].shift(1).fillna(initial_capital)
+    
+    # Calculate daily P&L
+    daily_df['daily_pnl'] = daily_df['final_balance'] - daily_df['initial_balance']
+    daily_df['daily_return_pct'] = (daily_df['daily_pnl'] / daily_df['initial_balance'] * 100).round(2)
+    
+    # Calculate cumulative P&L
+    daily_df['cumulative_pnl'] = daily_df['final_balance'] - initial_capital
+    
+    # Calculate drawdown
+    daily_df['peak_balance'] = daily_df['final_balance'].cummax()
+    daily_df['drawdown_pct'] = ((daily_df['peak_balance'] - daily_df['final_balance']) / daily_df['peak_balance'] * 100).round(2)
+    
+    # Aggregate trades by exit date
+    if trades:
+        trades_df = pd.DataFrame(trades)
+        
+        # Parse exit dates
+        if 'exit_date' in trades_df.columns:
+            trades_df['exit_date_parsed'] = pd.to_datetime(trades_df['exit_date'])
+        elif 'exit_date_str' in trades_df.columns:
+            trades_df['exit_date_parsed'] = pd.to_datetime(trades_df['exit_date_str'])
+        else:
+            trades_df['exit_date_parsed'] = pd.NaT
+        
+        # Filter out invalid dates
+        trades_df = trades_df[trades_df['exit_date_parsed'].notna()]
+        
+        if not trades_df.empty:
+            # Extract date only (remove time component)
+            trades_df['exit_date_only'] = trades_df['exit_date_parsed'].dt.date
+            
+            # Group by exit date
+            daily_trades = trades_df.groupby('exit_date_only').agg(
+                num_trades=('pnl', 'count'),
+                num_winners=('pnl', lambda x: (x > 0).sum()),
+                num_losers=('pnl', lambda x: (x <= 0).sum()),
+                gross_profit=('pnl', lambda x: x[x > 0].sum() if (x > 0).any() else 0.0),
+                gross_loss=('pnl', lambda x: abs(x[x <= 0].sum()) if (x <= 0).any() else 0.0),
+                largest_win=('pnl', lambda x: x.max() if len(x) > 0 else 0.0),
+                largest_loss=('pnl', lambda x: x.min() if len(x) > 0 else 0.0),
+            ).reset_index()
+            
+            # Calculate averages
+            daily_trades['avg_win'] = daily_trades.apply(
+                lambda row: row['gross_profit'] / row['num_winners'] if row['num_winners'] > 0 else 0.0,
+                axis=1
+            ).round(2)
+            
+            daily_trades['avg_loss'] = daily_trades.apply(
+                lambda row: row['gross_loss'] / row['num_losers'] if row['num_losers'] > 0 else 0.0,
+                axis=1
+            ).round(2)
+            
+            # Calculate win rate
+            daily_trades['win_rate'] = (
+                daily_trades['num_winners'] / daily_trades['num_trades'] * 100
+            ).round(2)
+            
+            # Convert date back to datetime for merging
+            daily_trades['date'] = pd.to_datetime(daily_trades['exit_date_only'])
+            daily_trades = daily_trades.drop('exit_date_only', axis=1)
+            
+            # Merge with daily_df
+            daily_df = daily_df.merge(
+                daily_trades,
+                on='date',
+                how='left',
+                suffixes=('', '_trade')
+            )
+            
+            # Update columns with trade data
+            for col in ['num_trades', 'num_winners', 'num_losers', 'gross_profit', 
+                       'gross_loss', 'win_rate', 'largest_win', 'largest_loss', 
+                       'avg_win', 'avg_loss']:
+                if f'{col}_trade' in daily_df.columns:
+                    daily_df[col] = daily_df[f'{col}_trade'].fillna(0)
+                    daily_df = daily_df.drop(f'{col}_trade', axis=1)
+    
+    # Round numeric columns
+    numeric_cols = [
+        'initial_balance', 'final_balance', 'daily_pnl', 'gross_profit', 
+        'gross_loss', 'largest_win', 'largest_loss', 'avg_win', 'avg_loss',
+        'cumulative_pnl', 'peak_balance'
+    ]
+    
+    for col in numeric_cols:
+        if col in daily_df.columns:
+            daily_df[col] = daily_df[col].round(2)
+    
+    # Convert integer columns
+    int_cols = ['num_trades', 'num_winners', 'num_losers']
+    for col in int_cols:
+        if col in daily_df.columns:
+            daily_df[col] = daily_df[col].fillna(0).astype(int)
+    
+    # Format date as YYYY-MM-DD
+    daily_df['date'] = daily_df['date'].dt.strftime('%Y-%m-%d')
+    
+    # Select and order final columns
+    final_columns = [
+        'date',
+        'initial_balance',
+        'final_balance',
+        'daily_pnl',
+        'daily_return_pct',
+        'cumulative_pnl',
+        'peak_balance',
+        'drawdown_pct',
+        'num_trades',
+        'num_winners',
+        'num_losers',
+        'win_rate',
+        'gross_profit',
+        'gross_loss',
+        'largest_win',
+        'largest_loss',
+        'avg_win',
+        'avg_loss'
+    ]
+    
+    # Keep only existing columns
+    final_columns = [col for col in final_columns if col in daily_df.columns]
+    daily_df = daily_df[final_columns]
+    
+    # Export to CSV
+    daily_df.to_csv(output_path, index=False)
 
 
 def generate_text_report(stats: Dict, title: str = "PERFORMANCE REPORT") -> str:

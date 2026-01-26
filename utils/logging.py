@@ -51,7 +51,7 @@ def setup_logging(level: int = logging.INFO, log_file: Optional[str] = None) -> 
 
     if log_file:
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setLevel(level)
+        file_handler.setLevel(logging.DEBUG)  # ✅ CHANGED: Always log DEBUG+ to file for diagnostics
         file_handler.setFormatter(logging.Formatter(fmt=fmt, datefmt=datefmt))
         root.addHandler(file_handler)
 
@@ -84,16 +84,26 @@ def enable_backtest_optimization(level: BacktestLogLevel = BacktestLogLevel.MINI
     
     Args:
         level: The optimization level to use
+        
+    Note: File handlers maintain DEBUG level for full diagnostic output.
+    This function only affects console output and root logger level.
     """
+    root = logging.getLogger()
+    
     if level == BacktestLogLevel.SILENT:
-        # Disable most logging during backtest
-        logging.getLogger().setLevel(logging.CRITICAL)
+        # Disable most logging during backtest (console only)
+        root.setLevel(logging.CRITICAL)
     elif level == BacktestLogLevel.MINIMAL:
-        # Only show important logs
-        logging.getLogger().setLevel(logging.WARNING)
+        # Only show important logs (console only)
+        root.setLevel(logging.WARNING)
     else:
         # Keep logging as is
-        pass
+        root.setLevel(logging.INFO)
+    
+    # ✅ ADDED: Ensure file handlers still capture everything
+    for handler in root.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.setLevel(logging.DEBUG)
     
     return level
 

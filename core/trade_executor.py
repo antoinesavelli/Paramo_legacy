@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 from config import TradingConfig
-from core.risk_manager import RiskManager
+from strategy.risk_manager import RiskManager
 from utils.logging import get_logger
 
 def log_api_error(logger, msg, exc):

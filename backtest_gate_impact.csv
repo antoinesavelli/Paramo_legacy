@@ -1,4 +1,0 @@
-gate,count,winner_like_count,winner_like_pct,loser_like_count,loser_like_pct,est_net_value,avg_gap_pct
-outside_analysis_window,8,0,0.0,0,0.0,0.0,1294.39
-pattern_invalid,7,0,0.0,7,100.0,-185.55,1005.78
-insufficient_bars_for_pattern,6,0,0.0,0,0.0,0.0,1046.88

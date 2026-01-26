@@ -9,7 +9,7 @@ import pandas as pd
 
 from config import TradingConfig
 from data_handler.api import APIDataHandler
-from core.pattern_analyzer import PatternAnalyzer
+from strategy.pattern_analyzer import PatternAnalyzer
 from utils import get_logger
 from screener.core import UnifiedScreener
 

@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 
 from utils.logging import get_logger
-from core.pattern_analyzer import PatternAnalyzer
+from strategy.pattern_analyzer import PatternAnalyzer
 from news.backtest import NewsIntegrationBacktest
 from screener.core import UnifiedScreener, CandidateSignal
 

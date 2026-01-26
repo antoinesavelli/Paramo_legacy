@@ -32,7 +32,7 @@ sys.path.insert(0, project_root)
 
 from config.loader import build_config
 from data_handler.local import LocalDataHandler
-from core.pattern_analyzer import PatternAnalyzer
+from strategy.pattern_analyzer import PatternAnalyzer
 from screener.backtest import BacktestScreener
 from screener.rules import cfg_view_from
 from utils.logging import get_logger

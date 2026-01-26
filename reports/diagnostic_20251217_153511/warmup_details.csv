@@ -1,9 +1,0 @@
-date,symbol,gap_percent,bar_count,passed_warmup,reason
-2024-01-03,SOHU,-100.0,89,True,passed
-2024-01-03,NESR,-100.0,99,True,passed
-2024-01-03,FEBO,inf,71,True,passed
-2024-01-04,NESR,-100.0,67,True,passed
-2024-01-04,ACON,1220.2042304886945,386,True,passed
-2024-01-04,CINT,-100.0,36,True,passed
-2024-01-04,IZM,-100.0,221,True,passed
-2024-01-04,DIBS,-100.0,156,True,passed

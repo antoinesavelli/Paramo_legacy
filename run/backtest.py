@@ -1,5 +1,5 @@
 ﻿# =====================================================
-# run.backtest.py - Backtest Run Entry Point
+# run.backtester.py - Backtest Run Entry Point
 # =====================================================
 
 import sys
@@ -20,7 +20,7 @@ def main():
     try:
         # Step 1: Import CLI utilities
         print("\n[1/10] Importing CLI utilities...")
-        from core.cli_common import add_logging_args, configure_logging
+        from utils.cli_common import add_logging_args, configure_logging
         print("✓ CLI utilities imported")
         
         # Step 2: Parse arguments
@@ -77,14 +77,22 @@ def main():
         print("\n[4/10] Configuring logging...")
         log_level = getattr(args, 'log_level', 'INFO')
         optimize = getattr(args, 'optimize_logging', 'minimal')
+        show_screener_warnings = getattr(args, 'show_screener_warnings', False)
         
         # ✅ Log file goes to reports directory
-        log_file = run_dir / "backtest.log"
-        configure_logging(log_level, log_file=str(log_file), optimize=optimize)
+        log_file = run_dir / "backtest_log.txt"
+        configure_logging(
+            log_level, 
+            log_file=str(log_file), 
+            optimize=optimize,
+            show_screener_warnings=show_screener_warnings
+        )
         logger = logging.getLogger("run_backtest")
         
         print(f"✓ Logging configured")
         print(f"  Log file: {log_file.absolute()}")
+        if not show_screener_warnings:
+            print(f"  Console: Screener warnings suppressed (see log file for details)")
         
         # Step 5: Parse dates
         print("\n[5/10] Parsing dates...")
@@ -118,20 +126,26 @@ def main():
         
         # Step 8: Initialize components
         print("\n[8/10] Initializing trading components...")
-        from core.pattern_analyzer import PatternAnalyzer
-        from core.backtester import Backtester
+        from strategy.pattern_analyzer import PatternAnalyzer
+        from backtester.core import Backtester
         
         pattern_analyzer = PatternAnalyzer(config, local_data_handler)
-        bt = Backtester(config, local_data_handler, pattern_analyzer=pattern_analyzer)
+        bt = Backtester(
+            config, 
+            local_data_handler, 
+            pattern_analyzer=pattern_analyzer,
+            reports_dir=run_dir  # ✅ Pass reports directory
+        )
         print("✓ Components initialized")
         
-        # Step 9: Run backtest
+        # Step 9: Run backtest with progress bar
         print("\n[9/10] Running backtest...")
+        print("=" * 80)
         logger.info("Starting backtest execution...")
         logger.info("=" * 80)
         
         results = bt.run_backtest(start_date, end_date, initial_capital=capital)
-        print("✓ Backtest execution completed")
+        print("\n✓ Backtest execution completed")  # Extra newline after progress bar
         
         # Step 10: Generate reports
         print("\n[10/10] Generating reports...")

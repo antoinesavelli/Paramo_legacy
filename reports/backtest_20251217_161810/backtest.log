@@ -1,4 +1,0 @@
-2025-12-17 16:18:37,751 WARNING screener.backtest - All candidates filtered by daily volume pre-screen component=bt_screener
-2025-12-17 16:18:48,127 WARNING screener.backtest - No candidates meeting gap threshold (50.0%) component=bt_screener
-2025-12-17 16:18:52,272 WARNING screener.backtest - All candidates filtered by daily volume pre-screen component=bt_screener
-2025-12-17 16:18:59,578 WARNING core.trade_simulator - XOSWW: Hold time 32.0 min exceeds limit of 30 min (reason: max_hold_time) component=trade_sim

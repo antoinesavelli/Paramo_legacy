@@ -1,3 +1,0 @@
-date,screen_initial,screen_after_gap,screen_after_price,screen_after_volume,warmup_passed,warmup_failed,patterns_valid,risk_tradeable,gap_filter_pass_rate,price_filter_pass_rate,volume_filter_pass_rate,warmup_pass_rate
-2024-01-03,2806,164,93,47,44,3,0,0,5.844618674269423,56.70731707317073,50.53763440860215,93.61702127659575
-2024-01-04,2783,193,101,59,56,3,0,0,6.93496227093065,52.331606217616574,58.415841584158414,94.91525423728814

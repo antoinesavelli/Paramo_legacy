@@ -1,0 +1,6 @@
+{
+  "pattern": {
+    "MIN_STEP_UPS": [2, 3, 4],
+    "MIN_ADVANCE_RETENTION": [30.0, 40.0, 50.0, 60.0]
+  }
+}

@@ -11,8 +11,8 @@ import collections
 from pathlib import Path
 
 from utils.logging import get_logger
-from core.risk_manager import calc_atr_stop
-from core.pattern_analyzer import PatternAnalyzer
+from strategy.risk_manager import calc_atr_stop
+from strategy.pattern_analyzer import PatternAnalyzer
 from screener.rules import cfg_view_from
 from screener.helpers import (
     LiveRelativeVolumeCalculator, 
@@ -77,6 +77,14 @@ class UnifiedScreener:
         """
         Unified screening logic for both live and backtest.
         
+        Filtering order:
+        1. Daily volume pre-screen (from aggregates)
+        2. Relative volume filter (if enabled)
+        3. Load intraday bars
+        4. Gap % confirmed check (during continuous monitoring)
+        5. Price range check (current price validation)
+        6. Pattern analysis (expensive operation - only for survivors)
+        
         Args:
             candidates_df: DataFrame with gap_percent, last_price, symbol
             day: Trading day (for historical lookups)
@@ -96,6 +104,7 @@ class UnifiedScreener:
             "candidates_in": len(candidates_df),
             "after_daily_volume_filter": 0,
             "after_relative_volume_filter": 0,
+            "after_price_filter": 0,  # ✅ NEW: Track price filter results
             "processed": 0,
             "pattern_valid": 0,
             "signals": 0,
@@ -217,6 +226,10 @@ class UnifiedScreener:
                 f"[MARKET CONTEXT] Score: {mc_score:.1f} | Environment: {mc_env}"
             )
         
+        # Get price range from config
+        min_price = self.config.screening.MIN_PRICE
+        max_price = self.config.screening.MAX_PRICE
+        
         # Analyze each candidate
         for idx, (_, row) in enumerate(candidates_df.iterrows(), 1):
             symbol = str(row['symbol'])
@@ -250,22 +263,6 @@ class UnifiedScreener:
                 continue
             
 
-            # Bar count checks are ONLY for pattern analysis minimum
-            if premarket_enabled and len(bars) < min_bars:
-                diagnostics.append({
-                    "date": pd.Timestamp(day).date(),
-                    "symbol": symbol,
-                    "gap_percent": gap_pct,
-                    "relative_volume": rel_vol,
-                    "daily_volume": daily_volume,
-                    "phase": "reject",
-                    "reason": "insufficient_bars_for_pattern",
-                    "rows": len(bars),
-                    "min_bars": min_bars
-                })
-                stats["reject_reasons"]["insufficient_bars_for_pattern"] += 1
-                continue
-            
             # Warmup check is ONLY for pattern analysis minimum
             if len(bars) < warmup:
                 diagnostics.append({
@@ -282,25 +279,7 @@ class UnifiedScreener:
                 stats["reject_reasons"]["insufficient_bars_for_pattern"] += 1
                 continue
             
-            # Validate columns
-            missing_cols = [
-                col for col in ['open', 'high', 'low', 'close', 'volume', 'timestamp'] 
-                if col not in bars.columns
-            ]
-            if missing_cols:
-                diagnostics.append({
-                    "date": pd.Timestamp(day).date(),
-                    "symbol": symbol,
-                    "gap_percent": gap_pct,
-                    "relative_volume": rel_vol,
-                    "daily_volume": daily_volume,
-                    "phase": "reject",
-                    "reason": "bars_missing_columns",
-                    "missing": ",".join(missing_cols)
-                })
-                stats["reject_reasons"]["bars_missing_columns"] += 1
-                continue
-            
+
             # Check for NaN in warmup period (pattern analysis window)
             if bars.iloc[:warmup].isna().any().any():
                 diagnostics.append({
@@ -315,14 +294,41 @@ class UnifiedScreener:
                 stats["reject_reasons"]["nan_in_pattern_window"] += 1
                 continue
             
+
+            # ✅ NEW: PRICE RANGE CHECK (before expensive pattern analysis)
+            # Use the entry price (close of last warmup bar) for validation
+            entry_row = bars.iloc[warmup - 1]
+            entry_price = float(entry_row['close'])
+            
+            if entry_price < min_price or entry_price > max_price:
+                diagnostics.append({
+                    "date": pd.Timestamp(day).date(),
+                    "symbol": symbol,
+                    "gap_percent": gap_pct,
+                    "relative_volume": rel_vol,
+                    "daily_volume": daily_volume,
+                    "phase": "reject",
+                    "reason": "price_out_of_range",
+                    "entry_price": entry_price,
+                    "min_price": min_price,
+                    "max_price": max_price
+                })
+                stats["reject_reasons"]["price_out_of_range"] += 1
+                stats["after_price_filter"] = stats["processed"] - stats["reject_reasons"]["price_out_of_range"]
+                
+                self.logger.debug(
+                    f"[REJECT] {symbol} - Price ${entry_price:.2f} outside range "
+                    f"(${min_price:.2f} - ${max_price:.2f})"
+                )
+                continue
+            
             # Pattern analysis (uses warmup period for initial pattern detection)
             bars_warm = bars.iloc[:warmup].copy()
             
-            # ✅ NEW: Calculate potential entry timestamp (after warmup)
-            entry_row = bars.iloc[warmup - 1]
+            # Calculate entry timestamp (already extracted above for price check)
             entry_ts = entry_row['timestamp']
             
-            # ✅ NEW: Check if entry time falls within analysis window
+            # ✅ Check if entry time falls within analysis window
             if analysis_window_start_utc is not None and analysis_window_end_utc is not None:
                 # ✅ FIXED: Handle timezone-aware timestamp properly
                 if isinstance(entry_ts, pd.Timestamp):
@@ -355,7 +361,6 @@ class UnifiedScreener:
                         f"outside analysis window ({window_start_str} - {window_end_str})"
                     )
                     continue
-            
             pa = self.pa.analyze_pattern(
                 symbol, 
                 bars=bars_warm, 
@@ -376,9 +381,8 @@ class UnifiedScreener:
                 stats["reject_reasons"]["pattern_invalid"] += 1
                 continue
             
-            # Valid signal - calculate entry and stop
+            # Valid signal - calculate stop (entry_price already calculated above)
             stats["pattern_valid"] += 1
-            entry_price = float(entry_row['close'])
             
             is_premarket_entry = premarket_enabled and entry_ts < premarket_end_utc
             
@@ -390,7 +394,7 @@ class UnifiedScreener:
                 fallback_pct=0.03
             )
             
-            # Log without warmup volume (not used for filtering anymore)
+            # Log signal
             self.logger.info(
                 f"[SIGNAL] {symbol} | "
                 f"Gap: {gap_pct:+.2f}% | "
@@ -418,6 +422,10 @@ class UnifiedScreener:
                 }
             ))
             stats["signals"] += 1
+        
+        # Final price filter stat (if not already set by rejections)
+        if "price_out_of_range" not in stats["reject_reasons"]:
+            stats["after_price_filter"] = stats["processed"]
         
         return {"signals": signals, "diagnostics": diagnostics, "stats": stats}
     
@@ -579,8 +587,7 @@ class UnifiedScreener:
         diagnostics: List[Dict], 
         stats: Dict
     ) -> bool:
-        """Check news catalyst if news integration is enabled."""
-        min_news_strength = getattr(self.config.backtest, "MIN_NEWS_STRENGTH", 30)
+        """Check news catalyst: requires presence of news with acceptable negative sentiment."""
         ignore_catalyst = getattr(self.config.backtest, "IGNORE_CATALYST", True)
         
         if ignore_catalyst:
@@ -592,16 +599,47 @@ class UnifiedScreener:
             self.logger.debug(f"[NEWS] {symbol} - Analysis error: {e}")
             news = {}
         
-        if not news.get('has_catalyst') or int(news.get('catalyst_strength', 0)) < min_news_strength:
+        # Check if has news
+        if not news.get('has_news', False):
             diagnostics.append(self.diagnostic_creator.create_rejection(
                 date=day,
                 symbol=symbol,
                 gap_percent=gap_pct,
                 relative_volume=rel_vol,
-                reason="weak_catalyst",
-                catalyst_strength=news.get('catalyst_strength')
+                reason="no_news",
+                article_count=0
             ))
-            stats["reject_reasons"]["weak_catalyst"] += 1
+            stats["reject_reasons"]["no_news"] += 1
+            self.logger.debug(f"[REJECT] {symbol} - No news articles found")
             return False
         
+        # Check negative sentiment filter
+        if not news.get('passes_filter', False):
+            max_neg = news.get('max_negative', 0.0)
+            max_threshold = getattr(self.config.backtest, 'MAX_NEGATIVE_SENTIMENT', 0.05)
+            
+            diagnostics.append(self.diagnostic_creator.create_rejection(
+                date=day,
+                symbol=symbol,
+                gap_percent=gap_pct,
+                relative_volume=rel_vol,
+                reason="excessive_negative_sentiment",
+                article_count=news.get('article_count', 0),
+                max_negative=max_neg,
+                threshold=max_threshold
+            ))
+            stats["reject_reasons"]["excessive_negative_sentiment"] += 1
+            self.logger.debug(
+                f"[REJECT] {symbol} - Excessive negative sentiment: "
+                f"{max_neg:.3f} > {max_threshold:.3f}"
+            )
+            return False
+        
+        # Passed: Has news and acceptable sentiment
+        article_count = news.get('article_count', 0)
+        max_neg = news.get('max_negative', 0.0)
+        self.logger.info(
+            f"[NEWS] {symbol} - PASS: {article_count} articles, "
+            f"max_neg={max_neg:.3f}"
+        )
         return True

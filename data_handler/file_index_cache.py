@@ -54,7 +54,7 @@ class FileIndexCache:
     def __init__(self, cache_dir: Optional[str] = None):
         """
         Args:
-            cache_dir: Directory to store cache files (default: D:\trading_data\cached_dateranges)
+            cache_dir: Directory to store cache files (default: D:\\trading_data\\cached_dateranges)
         """
         if cache_dir is None:
             # Default to trading_data/cached_dateranges
@@ -77,8 +77,8 @@ class FileIndexCache:
         Validation: Only checks if date range matches (simple and fast).
         
         Args:
-            data_dir: Intraday data directory (D:\trading_data)
-            aggregate_dir: Daily aggregates directory (D:\trading_data\daily_aggregates)
+            data_dir: Intraday data directory (D:\\trading_data)
+            aggregate_dir: Daily aggregates directory (D:\\trading_data\\daily_aggregates)
             start_date: Start date 'YYYY-MM-DD'
             end_date: End date 'YYYY-MM-DD'
             force_rebuild: Force rebuild even if cache exists

@@ -1,5 +1,4 @@
-
-# =====================================================
+﻿# =====================================================
 # Daily aggregate data handler for gap calculations and volume analysis.
 # =====================================================
 
@@ -11,11 +10,16 @@ Handles:
 - Efficient batch operations
 
 File structure: daily_aggregates/YYYY/YYYYMM.parquet
+
+MEMORY OPTIMIZATION:
+- Only ONE month cached at a time (cache_limit=1)
+- Only essential columns loaded (symbol, date, open, high, low, close, volume)
+- Automatic cache eviction when switching months
 """
 
 import pandas as pd
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import logging
 from pathlib import Path
 from collections import OrderedDict
@@ -26,20 +30,26 @@ logger = logging.getLogger("data_handler.aggregate_handler")
 class AggregateDataHandler:
     """Handles daily aggregate OHLCV data with efficient caching."""
     
-    def __init__(self, aggregate_dir: str, cache_limit: int = 3):
+    # ✅ OPTIMIZED: Only load essential columns
+    REQUIRED_COLUMNS = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+    OPTIONAL_COLUMNS = ['bar_count', 'first_timestamp', 'last_timestamp', 
+                        'avg_volume_10d', 'avg_volume_20d']
+    
+    def __init__(self, aggregate_dir: str, cache_limit: int = 1):
         """
         Initialize aggregate data handler.
         
         Args:
             aggregate_dir: Base directory for aggregates (e.g., D:\trading_data\daily_aggregates)
-            cache_limit: Number of months to keep in cache
+            cache_limit: Number of months to keep in cache (default: 1 for memory efficiency)
         """
         self.aggregate_dir = Path(aggregate_dir)
         self._cache = OrderedDict()
+        # ✅ CHANGED: Default to 1 month only
         self._cache_limit = cache_limit
         
         logger.info(f"AggregateDataHandler initialized: {self.aggregate_dir}")
-        logger.info(f"Cache limit: {cache_limit} months")
+        logger.info(f"Cache limit: {cache_limit} month(s)")
     
     def get_daily_stats(self, symbol: str, day: datetime) -> Optional[Dict]:
         """
@@ -78,13 +88,16 @@ class AggregateDataHandler:
             'high': float(row['high']),
             'low': float(row['low']),
             'close': float(row['close']),
-            'volume': int(row['volume']),
-            'bar_count': int(row['bar_count']),
-            'first_timestamp': row.get('first_timestamp'),
-            'last_timestamp': row.get('last_timestamp')
+            'volume': int(row['volume'])
         }
         
-        # Add volume averages if available
+        # Add optional columns if available
+        if 'bar_count' in row.index:
+            stats['bar_count'] = int(row['bar_count'])
+        if 'first_timestamp' in row.index:
+            stats['first_timestamp'] = row['first_timestamp']
+        if 'last_timestamp' in row.index:
+            stats['last_timestamp'] = row['last_timestamp']
         if 'avg_volume_10d' in row.index:
             stats['avg_volume_10d'] = float(row['avg_volume_10d'])
         if 'avg_volume_20d' in row.index:
@@ -180,7 +193,10 @@ class AggregateDataHandler:
     
     def _get_monthly_aggregates(self, year_month: str) -> pd.DataFrame:
         """
-        Load monthly aggregate file with LRU caching.
+        Load monthly aggregate file with single-month caching.
+        
+        OPTIMIZATION: Only one month is kept in cache at a time.
+        When switching months, old month is automatically evicted.
         
         Args:
             year_month: YYYYMM format (e.g., '202401')
@@ -194,6 +210,13 @@ class AggregateDataHandler:
             logger.debug(f"Cache hit: {year_month}")
             return self._cache[year_month]
         
+        # ✅ OPTIMIZATION: Evict old month BEFORE loading new one
+        if len(self._cache) >= self._cache_limit:
+            evicted_month, evicted_df = self._cache.popitem(last=False)
+            rows_freed = len(evicted_df)
+            del evicted_df  # Explicit cleanup
+            logger.info(f"Evicted from cache: {evicted_month} ({rows_freed:,} rows freed)")
+        
         # Load from file
         year = year_month[:4]
         agg_file = self.aggregate_dir / year / f"{year_month}.parquet"
@@ -203,19 +226,42 @@ class AggregateDataHandler:
             return pd.DataFrame()
         
         try:
-            df = pd.read_parquet(agg_file)
+            # ✅ OPTIMIZED: Only load required columns
+            # First check what columns are available
+            try:
+                # Fast column check without loading data
+                import pyarrow.parquet as pq
+                schema = pq.read_schema(agg_file)
+                available_cols = schema.names
+                
+                # Build column list: required + available optional
+                cols_to_load = [col for col in self.REQUIRED_COLUMNS if col in available_cols]
+                for opt_col in self.OPTIONAL_COLUMNS:
+                    if opt_col in available_cols:
+                        cols_to_load.append(opt_col)
+                
+                df = pd.read_parquet(agg_file, columns=cols_to_load)
+                logger.debug(f"Loaded {len(cols_to_load)} columns from {year_month}")
+                
+            except ImportError:
+                # Fallback if pyarrow not available - load all columns
+                df = pd.read_parquet(agg_file)
+                # Filter to only needed columns
+                available_cols = df.columns.tolist()
+                keep_cols = [col for col in (self.REQUIRED_COLUMNS + self.OPTIONAL_COLUMNS) 
+                           if col in available_cols]
+                df = df[keep_cols]
             
-            # Ensure date column is datetime
+            # Ensure date column is date type (not datetime)
             if 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date']).dt.date
             
-            # LRU cache eviction
-            if len(self._cache) >= self._cache_limit:
-                evicted = self._cache.popitem(last=False)
-                logger.debug(f"Evicted from cache: {evicted[0]}")
-            
+            # Add to cache
             self._cache[year_month] = df
-            logger.info(f"Loaded aggregate: {year_month} ({len(df)} rows)")
+            
+            # Log memory usage estimate
+            memory_mb = df.memory_usage(deep=True).sum() / (1024 * 1024)
+            logger.info(f"Loaded aggregate: {year_month} ({len(df):,} rows, {memory_mb:.1f} MB)")
             
             return df
             
@@ -224,9 +270,11 @@ class AggregateDataHandler:
             return pd.DataFrame()
     
     def clear_cache(self):
-        """Clear the aggregate cache."""
+        """Clear the aggregate cache and free memory."""
+        months_cleared = list(self._cache.keys())
+        total_rows = sum(len(df) for df in self._cache.values())
         self._cache.clear()
-        logger.info("Cleared aggregate cache")
+        logger.info(f"Cleared aggregate cache: {len(months_cleared)} month(s), {total_rows:,} rows freed")
     
     def cleanup_month(self, year_month: str):
         """
@@ -236,8 +284,9 @@ class AggregateDataHandler:
             year_month: Month in YYYYMM format
         """
         if year_month in self._cache:
+            rows = len(self._cache[year_month])
             del self._cache[year_month]
-            logger.debug(f"Removed {year_month} from cache")
+            logger.debug(f"Removed {year_month} from cache ({rows:,} rows)")
     
     def get_cache_info(self) -> Dict:
         """
@@ -246,9 +295,21 @@ class AggregateDataHandler:
         Returns:
             Dict with cache statistics
         """
-        return {
+        cache_info = {
             'cached_months': list(self._cache.keys()),
             'cache_size': len(self._cache),
             'cache_limit': self._cache_limit,
             'total_rows': sum(len(df) for df in self._cache.values())
         }
+        
+        # Add memory usage estimate
+        if self._cache:
+            total_memory_mb = sum(
+                df.memory_usage(deep=True).sum() / (1024 * 1024) 
+                for df in self._cache.values()
+            )
+            cache_info['memory_mb'] = round(total_memory_mb, 2)
+        else:
+            cache_info['memory_mb'] = 0
+        
+        return cache_info
