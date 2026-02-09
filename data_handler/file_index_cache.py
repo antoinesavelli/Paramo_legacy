@@ -13,6 +13,8 @@ Performance improvements:
 - Instant loading on subsequent runs (date range match only)
 - Pickle-based serialization for fast I/O
 - Dedicated cache storage in trading_data directory
+
+FILE FORMAT: YYYY-MM-DD.parquet (ISO date format)
 """
 
 import pandas as pd
@@ -54,11 +56,11 @@ class FileIndexCache:
     def __init__(self, cache_dir: Optional[str] = None):
         """
         Args:
-            cache_dir: Directory to store cache files (default: D:\\trading_data\\cached_dateranges)
+            cache_dir: Directory to store cache files (default: T:\\trading\\ticker_data\\cached_dateranges)
         """
         if cache_dir is None:
-            # Default to trading_data/cached_dateranges
-            cache_dir = r"D:\trading_data\cached_dateranges"
+            # Default to trading/ticker_data/cached_dateranges
+            cache_dir = r"T:\trading\ticker_data\cached_dateranges"
         
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -77,8 +79,8 @@ class FileIndexCache:
         Validation: Only checks if date range matches (simple and fast).
         
         Args:
-            data_dir: Intraday data directory (D:\\trading_data)
-            aggregate_dir: Daily aggregates directory (D:\\trading_data\\daily_aggregates)
+            data_dir: Intraday data directory (T:\\trading\\ticker_data)
+            aggregate_dir: Daily aggregates directory (T:\\trading\\ticker_data\\daily_aggregates)
             start_date: Start date 'YYYY-MM-DD'
             end_date: End date 'YYYY-MM-DD'
             force_rebuild: Force rebuild even if cache exists
@@ -151,10 +153,9 @@ class FileIndexCache:
             date_str = current_date.strftime("%Y-%m-%d")
             year = current_date.strftime("%Y")
             month = current_date.strftime("%m")
-            date_compact = current_date.strftime("%Y%m%d")
             
-            # ✅ FIXED: Path should be trading_data/YYYY/MM/YYYYMMDD.parquet
-            file_path = data_path / year / month / f"{date_compact}.parquet"
+            # ✅ NEW FORMAT: YYYY-MM-DD.parquet
+            file_path = data_path / year / month / f"{date_str}.parquet"
             
             if file_path.exists():
                 # Quick scan for symbols
@@ -218,178 +219,70 @@ class FileIndexCache:
         current = start_dt
         
         # Include month before start (for prev_close lookups)
-        prev_month = start_dt - pd.Timedelta(days=start_dt.day)
+        prev_month = start_dt - pd.DateOffset(months=1)
         months.add(prev_month.strftime("%Y%m"))
         
         while current <= end_dt:
             months.add(current.strftime("%Y%m"))
-            # Move to next month
-            if current.month == 12:
-                current = pd.Timestamp(year=current.year + 1, month=1, day=1)
-            else:
-                current = pd.Timestamp(year=current.year, month=current.month + 1, day=1)
+            current += pd.DateOffset(months=1)
         
         return sorted(months)
     
-    def _validate_cache(self, cached_data: Dict, start_date: str, end_date: str) -> bool:
-        """
-        Validate cached data - ONLY checks date range match.
-        
-        Simple and fast validation:
-        - Does the cached date range match requested date range?
-        
-        Args:
-            cached_data: Loaded cache data
-            start_date: Requested start date
-            end_date: Requested end date
-            
-        Returns:
-            True if date range matches
-        """
-        cached_range = cached_data.get('date_range', (None, None))
-        requested_range = (start_date, end_date)
-        
-        if cached_range != requested_range:
-            logger.debug(f"Cache date range mismatch: cached={cached_range}, requested={requested_range}")
-            return False
-        
-        return True
-    
     def _get_cache_file_path(self, start_date: str, end_date: str) -> Path:
-        """
-        Generate cache file path from date range.
-        
-        Format: index_YYYYMMDD_YYYYMMDD.pkl
-        Example: index_20240103_20241231.pkl
-        
-        Args:
-            start_date: Start date 'YYYY-MM-DD'
-            end_date: End date 'YYYY-MM-DD'
-            
-        Returns:
-            Path to cache file
-        """
+        """Generate cache file path from date range."""
         start_compact = start_date.replace('-', '')
         end_compact = end_date.replace('-', '')
         filename = f"index_{start_compact}_{end_compact}.pkl"
-        
         return self._cache_dir / filename
     
-    def _save_cache(self, cache_file: Path, data: Dict):
-        """Save index to cache file."""
-        try:
-            with open(cache_file, 'wb') as f:
-                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-            
-            size_mb = cache_file.stat().st_size / (1024 * 1024)
-            logger.info(f"Cache saved: {cache_file.name} ({size_mb:.2f} MB)")
-            
-        except Exception as e:
-            logger.error(f"Failed to save cache {cache_file}: {e}")
+    def _validate_cache(self, cached_data: Dict, start_date: str, end_date: str) -> bool:
+        """Validate cached data matches requested date range."""
+        if not cached_data or 'date_range' not in cached_data:
+            return False
+        
+        cached_start, cached_end = cached_data['date_range']
+        return cached_start == start_date and cached_end == end_date
     
     def _load_cache(self, cache_file: Path) -> Optional[Dict]:
-        """Load index from cache file."""
+        """Load cached index from pickle file."""
         try:
             with open(cache_file, 'rb') as f:
                 data = pickle.load(f)
-            
-            logger.debug(f"Cache loaded: {cache_file.name}")
             return data
-            
         except Exception as e:
-            logger.error(f"Failed to load cache {cache_file}: {e}")
+            logger.error(f"Error loading cache {cache_file}: {e}")
             return None
     
-    def clear_cache(self, older_than_days: Optional[int] = None):
-        """
-        Clear cache files.
-        
-        Args:
-            older_than_days: Only clear files older than N days (None = all)
-        """
-        cleared = 0
-        
-        for cache_file in self._cache_dir.glob("index_*.pkl"):
-            should_delete = False
-            
-            if older_than_days is None:
-                should_delete = True
-            else:
-                age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
-                if age.days > older_than_days:
-                    should_delete = True
-            
-            if should_delete:
-                try:
-                    cache_file.unlink()
-                    cleared += 1
-                except Exception as e:
-                    logger.error(f"Failed to delete {cache_file}: {e}")
-        
-        logger.info(f"Cleared {cleared} cache files")
-    
-    def get_cache_info(self) -> Dict:
-        """Get information about cached indices."""
-        cache_files = list(self._cache_dir.glob("index_*.pkl"))
-        
-        info = {
-            'cache_dir': str(self._cache_dir),
-            'total_caches': len(cache_files),
-            'caches': []
-        }
-        
-        for cache_file in sorted(cache_files):
-            try:
-                data = self._load_cache(cache_file)
-                if data:
-                    info['caches'].append({
-                        'file': cache_file.name,
-                        'date_range': data.get('date_range'),
-                        'created_at': data.get('created_at'),
-                        'total_days': data.get('total_days'),
-                        'total_symbols': data.get('total_symbols'),
-                        'size_mb': cache_file.stat().st_size / (1024 * 1024)
-                    })
-            except Exception as e:
-                logger.debug(f"Could not read cache {cache_file}: {e}")
-        
-        return info
+    def _save_cache(self, cache_file: Path, data: Dict):
+        """Save index data to pickle file."""
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.debug(f"Saved cache: {cache_file}")
+        except Exception as e:
+            logger.error(f"Error saving cache {cache_file}: {e}")
 
 
 def create_index_for_backtest(config) -> Dict:
     """
-    Convenience function to create file index for backtest configuration.
+    Convenience function to create/load index for backtest config.
     
     Args:
-        config: TradingConfig object
+        config: TradingConfig object with backtest settings
         
     Returns:
-        File index dictionary
+        Index data dict
     """
-    # Use dedicated cache directory in trading_data
-    cache_dir = str(Path(config.backtest.BASE_DATA_DIR) / "cached_dateranges")
-    cache_manager = FileIndexCache(cache_dir=cache_dir)
+    cache = FileIndexCache()
     
     data_dir = config.backtest.DATA_DIR
-    aggregate_dir = str(Path(config.backtest.BASE_DATA_DIR) / "daily_aggregates")
+    aggregate_dir = Path(data_dir) / "daily_aggregates"
     start_date = config.backtest.START_DATE
     end_date = config.backtest.END_DATE
     
-    logger.info(f"Creating file index for backtest: {start_date} to {end_date}")
-    logger.info(f"Cache directory: {cache_dir}")
-    
-    index_data = cache_manager.get_or_build_index(
+    return cache.get_or_build_index(
         data_dir=data_dir,
-        aggregate_dir=aggregate_dir,
+        aggregate_dir=str(aggregate_dir),
         start_date=start_date,
-        end_date=end_date,
-        force_rebuild=False
+        end_date=end_date
     )
-    
-    status = "cached" if index_data['cached'] else "newly built"
-    logger.info(
-        f"File index ready: {index_data['total_days']} days, "
-        f"{index_data['total_symbols']} unique symbols ({status})"
-    )
-    
-    return index_data

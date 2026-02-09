@@ -3,9 +3,10 @@
 # =====================================================
 
 import time
+import pandas as pd  # ✅ ADDED: Missing import
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
-from config import TradingConfig
+from config.config import TradingConfig  # ✅ FIXED: Added .config
 from strategy.risk_manager import RiskManager
 from utils.logging import get_logger
 
@@ -115,7 +116,7 @@ class TradeExecutor:
         # Get recent bars for ATR trailing stop
         try:
             recent_bars = self.api.get_bars(symbol, '1Min', limit=50).df
-        except:
+        except Exception:  # ✅ FIXED: Added except clause
             recent_bars = pd.DataFrame()
         
         self.active_trades[symbol] = {
@@ -149,181 +150,184 @@ class TradeExecutor:
         """Execute exit order (no minimum hold time enforcement)"""
         try:
             if symbol not in self.active_trades:
-                return {'success': False, 'reason': 'Position not found'}
+                return {'success': False, 'reason': 'No active position'}
             
-            self.logger.info(f"Exit requested for {symbol} reason={reason}")
-            position_info = self.active_trades[symbol]
+            trade = self.active_trades[symbol]
+            position_size = trade['position_size']
             
-            try:
-                self.api.cancel_order(position_info['stop_order_id'])
-            except Exception:
-                pass
+            # Cancel existing stop order
+            if trade.get('stop_order_id'):
+                try:
+                    self.api.cancel_order(trade['stop_order_id'])
+                except Exception as e:
+                    self.logger.warning(f"Failed to cancel stop for {symbol}: {e}")
             
+            # Execute market exit
             exit_order = place_order(
                 self.api, self.logger,
-                symbol=symbol, qty=position_info['position_size'],
-                side='sell', type='market', time_in_force='day'
+                symbol=symbol,
+                qty=position_size,
+                side='sell',
+                type='market',
+                time_in_force='day'
             )
             
             if exit_order and exit_order.status == 'filled':
                 exit_price = float(exit_order.filled_avg_price)
-                pnl = (exit_price - position_info['entry_price']) * position_info['position_size']
+                pnl = (exit_price - trade['entry_price']) * position_size
+                pnl_pct = ((exit_price - trade['entry_price']) / trade['entry_price']) * 100
                 
-                # Log time held
-                time_held = (datetime.now() - position_info['entry_time']).total_seconds() / 60.0
-                self.logger.info(f"{symbol} held for {time_held:.1f} minutes")
+                trade_record = {
+                    'symbol': symbol,
+                    'entry_time': trade['entry_time'],
+                    'exit_time': datetime.now(),
+                    'entry_price': trade['entry_price'],
+                    'exit_price': exit_price,
+                    'position_size': position_size,
+                    'pnl': pnl,
+                    'pnl_pct': pnl_pct,
+                    'exit_reason': reason,
+                    'is_reentry': trade.get('is_reentry', False),
+                    'reentry_count': trade.get('reentry_count', 0)
+                }
                 
-                trade_record = self._record_trade(symbol, position_info, exit_price, pnl, reason)
-                
-                # Clean up re-entry candidates if any exist
-                if symbol in self.reentry_candidates:
-                    del self.reentry_candidates[symbol]
-                    
+                self.trade_history.append(trade_record)
                 del self.active_trades[symbol]
-                self.risk_manager.daily_pnl += pnl
-                self.logger.info(f"Exit executed for {symbol}: ${pnl:.2f} P&L ({reason})")
+                
+                self.logger.info(
+                    f"EXIT {symbol}: ${exit_price:.2f} | "
+                    f"P&L: ${pnl:.2f} ({pnl_pct:+.2f}%) | "
+                    f"Reason: {reason}"
+                )
                 
                 return {
                     'success': True,
                     'symbol': symbol,
                     'exit_price': exit_price,
                     'pnl': pnl,
+                    'pnl_pct': pnl_pct,
                     'exit_reason': reason
                 }
             
             return {'success': False, 'reason': f"Exit order not filled: {getattr(exit_order, 'status', 'unknown')}"}
+            
         except Exception as e:
             log_api_error(self.logger, f"Error executing exit for {symbol}", e)
             return {'success': False, 'reason': str(e)}
 
-    def _record_trade(self, symbol, position_info, exit_price, pnl, reason):
-        trade_record = {
-            'symbol': symbol,
-            'entry_time': position_info['entry_time'],
-            'exit_time': datetime.now(),
-            'entry_price': position_info['entry_price'],
-            'exit_price': exit_price,
-            'position_size': position_info['position_size'],
-            'pnl': pnl,
-            'exit_reason': reason,
-            'was_reentry': position_info.get('is_reentry', False),
-            'reentry_number': position_info.get('reentry_count', 0)
-        }
-        self.trade_history.append(trade_record)
-        return trade_record
-
-    def _track_for_reentry(self, symbol: str, exit_price: float, position_info: Dict):
-        self.reentry_candidates[symbol] = {
-            'exit_price': exit_price,
-            'exit_time': datetime.now(),
-            'reentry_count': position_info['reentry_count'],
-            'high_since_exit': exit_price,
-            'monitoring': True,
-            'original_entry': position_info['entry_price']
-        }
-        self.logger.info(f"Tracking {symbol} for re-entry opportunity (count: {position_info['reentry_count']}/{self.config.reentry.MAX_REENTRIES_PER_STOCK})")
-
-    def check_reentry_opportunities(self, quotes: Dict) -> List[Dict]:
-        """Check all re-entry candidates for setup conditions"""
-        reentry_signals = []
-        for symbol in list(self.reentry_candidates.keys()):
-            if symbol not in quotes:
-                continue
-            candidate = self.reentry_candidates[symbol]
-            current_price = quotes[symbol]['last']
-            current_volume = quotes[symbol]['volume']
-            time_since_exit = (datetime.now() - candidate['exit_time']).total_seconds()
-            if time_since_exit < 300:
-                continue
-            if current_price > candidate['high_since_exit']:
-                candidate['high_since_exit'] = current_price
-            pullback = candidate['high_since_exit'] - current_price
-            if (self.config.reentry.MIN_PULLBACK_FOR_REENTRY <= pullback <= self.config.reentry.MAX_PULLBACK_FOR_REENTRY):
-                if current_volume > quotes[symbol].get('avg_volume', 500000) * 2:
-                    if current_price > candidate['high_since_exit'] - pullback * 0.5:
-                        reentry_signals.append({
-                            'symbol': symbol,
-                            'entry_price': current_price,
-                            'is_reentry': True,
-                            'reentry_number': candidate['reentry_count'] + 1,
-                            'pattern_strength': 75,
-                            'pullback_amount': pullback
-                        })
-                        del self.reentry_candidates[symbol]
-            elif pullback > self.config.reentry.MAX_PULLBACK_FOR_REENTRY * 2:
-                del self.reentry_candidates[symbol]
-                self.logger.info(f"Removed {symbol} from re-entry candidates (excessive pullback: ${pullback:.2f})")
-            elif time_since_exit > 1800:
-                del self.reentry_candidates[symbol]
-                self.logger.debug(f"Removed {symbol} from re-entry candidates (timeout)")
-        if reentry_signals:
-            self.logger.info(f"Re-entry signals generated: {len(reentry_signals)}")
-        return reentry_signals
-
-    def check_max_hold_time(self):
-        """Check and execute time-based exits for positions exceeding max hold time."""
-        current_time = datetime.now()
-        for symbol, position in list(self.active_trades.items()):
+    def update_active_positions(self):
+        """Update all active positions - check stops, time limits, and trailing stops"""
+        for symbol in list(self.active_trades.keys()):
             try:
-                max_hold_time = position.get('max_hold_time')
-                if max_hold_time and current_time >= max_hold_time:
-                    time_held_minutes = (current_time - position['entry_time']).total_seconds() / 60.0
-                    self.logger.info(f"Max hold time reached for {symbol} ({time_held_minutes:.1f} minutes)")
-                    self.execute_exit(symbol, reason="max_hold_time")
+                self._update_position(symbol)
             except Exception as e:
-                log_api_error(self.logger, f"Error checking max hold time for {symbol}", e)
+                self.logger.error(f"Error updating position for {symbol}: {e}")
 
-    def update_stops(self):
-        """Update ATR trailing stops for all positions"""
-        for symbol, position in self.active_trades.items():
-            try:
-                quote = self.api.get_last_quote(symbol)
-                current_price = quote.askprice
+    def _update_position(self, symbol: str):
+        """Update individual position"""
+        trade = self.active_trades[symbol]
+        
+        # Get current price
+        try:
+            quote = self.api.get_latest_quote(symbol)
+            current_price = float(quote.ap)  # Ask price for exits
+        except Exception as e:
+            self.logger.warning(f"Failed to get quote for {symbol}: {e}")
+            return
+        
+        # Check time limit
+        if datetime.now() >= trade['max_hold_time']:
+            self.execute_exit(symbol, reason="time_limit")
+            return
+        
+        # Update trailing stop if enabled
+        if self.config.risk.ATR_TRAILING_ENABLED:
+            self._update_trailing_stop(symbol, current_price)
+
+    def _update_trailing_stop(self, symbol: str, current_price: float):
+        """Update ATR-based trailing stop"""
+        trade = self.active_trades[symbol]
+        
+        # Update highest price
+        if current_price > trade['highest_price']:
+            trade['highest_price'] = current_price
+        
+        # Calculate profit percentage
+        profit_pct = ((current_price - trade['entry_price']) / trade['entry_price']) * 100
+        
+        # Only activate trailing stop if minimum profit reached
+        if profit_pct < self.config.risk.ATR_TRAILING_MIN_PROFIT_PCT:
+            return
+        
+        # Calculate ATR if we have bars
+        if not trade['recent_bars'].empty and len(trade['recent_bars']) >= self.config.risk.ATR_TRAILING_PERIOD:
+            atr = self._calculate_atr(trade['recent_bars'], self.config.risk.ATR_TRAILING_PERIOD)
+            new_stop = current_price - (atr * self.config.risk.ATR_TRAILING_MULTIPLIER)
+            
+            # Only raise the stop, never lower it
+            if new_stop > trade['stop_price']:
+                old_stop = trade['stop_price']
+                trade['stop_price'] = new_stop
                 
-                # Update recent bars for ATR calculation
+                # Update stop order
                 try:
-                    position['recent_bars'] = self.api.get_bars(symbol, '1Min', limit=50).df
-                except:
-                    pass
-                
-                new_stop = self.risk_manager.update_trailing_stop(symbol, current_price, position)
-                if new_stop and new_stop > position['stop_price']:
-                    try:
-                        self.api.cancel_order(position['stop_order_id'])
-                    except Exception:
-                        pass
+                    if trade.get('stop_order_id'):
+                        self.api.cancel_order(trade['stop_order_id'])
                     
-                    stop_order = place_order(
+                    new_stop_order = place_order(
                         self.api, self.logger,
-                        symbol=symbol, qty=position['position_size'],
-                        side='sell', type='stop', time_in_force='gtc', stop_price=new_stop
+                        symbol=symbol,
+                        qty=trade['position_size'],
+                        side='sell',
+                        type='stop',
+                        time_in_force='gtc',
+                        stop_price=new_stop
                     )
-                    position['stop_price'] = new_stop
-                    position['stop_order_id'] = stop_order.id if stop_order else None
-                    self.logger.info(f"Stop updated for {symbol}: ${new_stop:.2f}")
-            except Exception as e:
-                log_api_error(self.logger, f"Error updating stop for {symbol}", e)
+                    
+                    if new_stop_order:
+                        trade['stop_order_id'] = new_stop_order.id
+                        self.logger.info(
+                            f"Trailing stop updated for {symbol}: "
+                            f"${old_stop:.2f} -> ${new_stop:.2f} "
+                            f"(profit: {profit_pct:.2f}%)"
+                        )
+                except Exception as e:
+                    self.logger.error(f"Failed to update trailing stop for {symbol}: {e}")
 
-    def get_reentry_stats(self) -> Dict:
-        """Get statistics about re-entry performance"""
-        reentry_trades = [t for t in self.trade_history if t.get('was_reentry', False)]
-        if not reentry_trades:
-            return {'total': 0, 'profitable': 0, 'avg_pnl': 0}
-        profitable = [t for t in reentry_trades if t['pnl'] > 0]
-        return {
-            'total': len(reentry_trades),
-            'profitable': len(profitable),
-            'win_rate': len(profitable) / len(reentry_trades) * 100,
-            'avg_pnl': sum(t['pnl'] for t in reentry_trades) / len(reentry_trades),
-            'by_number': self._analyze_by_reentry_number(reentry_trades)
-        }
+    def _calculate_atr(self, bars: pd.DataFrame, period: int) -> float:
+        """Calculate Average True Range"""
+        try:
+            high = bars['high'].values
+            low = bars['low'].values
+            close = bars['close'].values
+            
+            tr1 = high - low
+            tr2 = abs(high - close[:-1])  # Previous close
+            tr3 = abs(low - close[:-1])
+            
+            tr = pd.DataFrame({'tr1': tr1[:-1], 'tr2': tr2, 'tr3': tr3}).max(axis=1)
+            atr = tr.rolling(period).mean().iloc[-1]
+            
+            return float(atr)
+        except Exception as e:
+            self.logger.warning(f"ATR calculation failed: {e}")
+            return 0.0
 
-    def _analyze_by_reentry_number(self, trades: List[Dict]) -> Dict:
-        by_number = {}
-        for trade in trades:
-            num = trade.get('reentry_number', 1)
-            if num not in by_number:
-                by_number[num] = {'count': 0, 'pnl': 0}
-            by_number[num]['count'] += 1
-            by_number[num]['pnl'] += trade['pnl']
-        return {k: {'count': v['count'], 'avg_pnl': v['pnl']/v['count']} for k, v in by_number.items()}
+    def close_all_positions(self):
+        """Close all active positions"""
+        self.logger.info(f"Closing all positions ({len(self.active_trades)} active)")
+        for symbol in list(self.active_trades.keys()):
+            self.execute_exit(symbol, reason="eod_close")
+
+    def get_active_positions(self) -> List[Dict]:
+        """Get list of active positions"""
+        return [
+            {
+                'symbol': symbol,
+                'entry_price': trade['entry_price'],
+                'entry_time': trade['entry_time'],
+                'position_size': trade['position_size'],
+                'stop_price': trade['stop_price']
+            }
+            for symbol, trade in self.active_trades.items()
+        ]

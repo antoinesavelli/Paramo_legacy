@@ -21,7 +21,8 @@ class ScreeningConfig:
     MIN_PRICE: float = 2.00
     MAX_PRICE: float = 20.00
     MIN_FLOAT: int = 0  # Ignored in backtest
-    MAX_FLOAT: int = 100_000_000  # Ignored in backtest
+    MAX_FLOAT: int = 20_000_000  # ✅ NEW: Maximum shares outstanding (20 million shares)
+    MAX_MARKETCAP: float = 100_000_000.0  # ✅ NEW: Maximum market cap ($100 million)
     MIN_RELATIVE_VOLUME: float = 2.0
     ENABLE_RELATIVE_VOLUME: bool = False
     RELATIVE_VOLUME_LOOKBACK_DAYS: int = 10
@@ -30,6 +31,10 @@ class ScreeningConfig:
     MIN_DAILY_VOLUME: int = 50_000  # Minimum total daily volume for consideration
     MIN_CUMULATIVE_VOLUME: int = 10_000  # Minimum cumulative intraday volume threshold
     ENABLE_DAILY_VOLUME_PRESCREEN: bool = True  # Pre-filter using daily aggregates
+    
+    # ✅ Fundamental filters (from aggregates)
+    ENABLE_FLOAT_FILTER: bool = True  # Enable float (shares outstanding) filter
+    ENABLE_MARKETCAP_FILTER: bool = True  # Enable market cap filter
     
     # ✅ Cumulative volume tracking (intraday files)
     CUMULATIVE_VOLUME: bool = False  # Enable cumulative volume column in intraday data
@@ -199,7 +204,7 @@ class SystemConfig:
     CLEAR_CACHE_BETWEEN_DAYS: bool = True
     USE_FILE_INDEX_CACHE: bool = True  # Enable pre-built file index
 
-    REPORTS_DIR: str = r"T:\reports"  # All backtest outputs go here
+    REPORTS_DIR: str = r"T:\trading\reports"  # All backtest outputs go here
 
 @dataclass(frozen=True)
 class MarketContextConfig:
@@ -208,7 +213,7 @@ class MarketContextConfig:
     VIX_SYMBOL: str = 'VIX'
     RUT_SYMBOL: str = 'RUT'
 
-    CSV_DIR: str = r'T:\market_context'
+    CSV_DIR: str = r'T:\trading\market_context'
 
     SMA_FAST: int = 5
     SMA_SLOW: int = 20
@@ -240,12 +245,14 @@ class MarketContextConfig:
 class BacktestConfig:
     """Backtest configuration (intraday only)."""
     START_DATE: str = '2024-01-03'
-    END_DATE: str = '2024-12-31'
+    END_DATE: str = '2024-01-10'
     INITIAL_CAPITAL: float = 1000.0
 
-    BASE_DATA_DIR: str = r'T:\\'
-    DATA_DIR: str = r'T:\ticker_data'
-    NEWS_DATA_DIR: str = r'T:\news_data'
+    # ✅ UPDATED: Simplified paths - daily_aggregates now at root level
+    BASE_DATA_DIR: str = r'T:\trading'
+    DATA_DIR: str = r'T:\trading\ticker_data'
+    NEWS_DATA_DIR: str = r'T:\trading\news_data'
+    DAILY_AGGREGATES_DIR: str = r'T:\trading\daily_aggregates'
 
     INTRADAY: bool = True
     INTRADAY_TIMEFRAME: str = '1Min'
@@ -253,8 +260,8 @@ class BacktestConfig:
     MAX_CANDIDATES_PER_DAY: int = 15
     
     # ✅ SIMPLIFIED NEWS FILTERING
-    IGNORE_CATALYST: bool = True           # Set to False to enable news filtering
-    MAX_NEGATIVE_SENTIMENT: float = 0.07   # Max negative sentiment allowed (0-1 scale)
+    IGNORE_CATALYST: bool = False           # Enable news filtering
+    MAX_NEGATIVE_SENTIMENT: float = 0.08   # Max negative sentiment allowed (0-1 scale)
     # REMOVED: MIN_NEWS_STRENGTH (no longer used)
 
     DATA_TZ: str = "US/Eastern"

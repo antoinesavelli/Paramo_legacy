@@ -3,7 +3,7 @@
 # Alpaca API Integration for Extreme Gap Trading
 # =====================================================
 
-from config import TradingConfig
+from config.config import TradingConfig  # ✅ FIXED: Added .config
 from data_handler.api import APIDataHandler
 from data_handler.local import LocalDataHandler
 from screener.live import LiveScreener
@@ -12,7 +12,6 @@ from strategy.risk_manager import RiskManager
 from core.trade_executor import TradeExecutor
 from core.monitor import Monitor
 from market_context.live import MarketContext
-from core.backtester import Backtester
 from utils.reporting import compute_statistics, generate_text_report
 import alpaca_trade_api as tradeapi
 from datetime import datetime, timedelta
@@ -41,16 +40,16 @@ def ensure_storage_layout(market_root: str = None, news_root: str = None, logger
     Ensure required directory structure exists.
     
     Expected structure:
-    - <data_dir>/YYYY/MM/YYYYMMDD.parquet (market data)
-    - <data_dir>/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)
-    - <data_dir>/news/ (news data)
-    - <data_dir>/market_context/ (SPY, VIX, RUT CSVs)
+    - <market_root>/ticker_data/YYYY/MM/YYYY-MM-DD.parquet (market data)
+    - T:/trading/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)  # ✅ FIXED: Updated format
+    - <market_root>/news_data/ (news data)
+    - <market_root>/market_context/ (SPY, VIX, RUT CSVs)
     """
     logger = logger or logging.getLogger(__name__)
     
     if market_root:
         _ensure_dir(market_root)
-        _ensure_dir(os.path.join(market_root, "daily_aggregates"))
+        # Don't create daily_aggregates subdirectory here - it's at root level now
         logger.info(f"Storage ready for market data at: {market_root}")
     
     if news_root:
@@ -148,164 +147,110 @@ class TradingSystem:
             return False
 
     def _schedule_tasks(self):
-        schedule.every(self.config.system.SCAN_INTERVAL_SECONDS).seconds.do(self.scan_market)
-        schedule.every(5).seconds.do(self.update_positions)
-        schedule.every(30).seconds.do(self.check_risk_limits)
-        schedule.every(60).seconds.do(self.generate_report)
+        schedule.every().day.at("08:00").do(self._market_open_tasks)
+        schedule.every().day.at("16:00").do(self._market_close_tasks)
+
+    def _market_open_tasks(self):
+        self.logger.info("Running market open tasks...")
+        try:
+            self.market_context.update_market_context()
+            if not self.market_context.should_trade():
+                self.logger.warning("Market conditions unfavorable - trading disabled for today")
+                self.running = False
+                return
+            self.running = True
+        except Exception as e:
+            self.logger.error(f"Error in market open tasks: {e}")
+
+    def _market_close_tasks(self):
+        self.logger.info("Running market close tasks...")
+        try:
+            self.trade_executor.close_all_positions()
+            self._generate_daily_report()
+        except Exception as e:
+            self.logger.error(f"Error in market close tasks: {e}")
 
     def _main_loop(self):
-        while self.running:
+        self.logger.info("Entering main trading loop...")
+        while True:
             try:
-                market_status = self.data_handler.get_market_status()
-                if market_status['is_open']:
-                    schedule.run_pending()
-                    time.sleep(1)
-                else:
-                    self.logger.info("Market is closed. Waiting...")
-                    time.sleep(60)
+                self._update_heartbeat()
+                schedule.run_pending()
+                if self.running:
+                    self._run_scan_with_timeout()
+                time.sleep(self.config.system.SCAN_INTERVAL_SECONDS)
             except Exception as e:
                 self.logger.error(f"Error in main loop: {e}")
-                time.sleep(5)
+                time.sleep(60)
 
-    def scan_market(self):
+    def _run_scan_with_timeout(self):
         try:
-            for attempt in range(3):
-                try:
-                    self.market_context.update_market_context()
-                    break
-                except Exception as e:
-                    self.logger.error(f"Market context update failed (attempt {attempt+1}): {e}")
-                    time.sleep(2)
-            if not self.market_context.should_trade():
-                self.logger.info("Market conditions unfavorable. Skipping scan.")
-                return
-            self.logger.debug("Starting market scan...")
-            self.risk_manager.update_daily_pnl()
-            
-            account = self.api.get_account()
-            equity = float(account.equity)
-            max_daily_loss_dollars = equity * (self.config.risk.MAX_DAILY_LOSS_PERCENT / 100.0)
-            
-            if self.risk_manager.daily_pnl <= -max_daily_loss_dollars:
-                self.logger.warning("Daily loss limit reached. Stopping scans.")
-                return
-            try:
-                candidates = self.screener.run_screen()
-            except Exception as e:
-                self.logger.error(f"Screener failed: {e}")
-                candidates = []
-            if not candidates:
-                self.logger.debug("No candidates found")
-                return
-            for candidate in candidates[:5]:
-                symbol = candidate['symbol']
-                news_impact = None
-                for attempt in range(2):
-                    try:
-                        news_impact = self.news_integration.analyze_news_impact(symbol)
-                        break
-                    except Exception as e:
-                        self.logger.error(f"News analysis failed for {symbol} (attempt {attempt+1}): {e}")
-                        time.sleep(1)
-                if news_impact is None:
-                    self.logger.warning(f"Skipping {symbol}: News data unavailable.")
-                    continue
-                if not news_impact.get('has_catalyst') or news_impact.get('catalyst_strength', 0) < 30:
-                    self.logger.info(f"Skipping {symbol}: No strong catalyst in news.")
-                    continue
-                if symbol in self.trade_executor.active_trades:
-                    continue
-                try:
-                    pattern_analysis = self.pattern_analyzer.analyze_pattern(symbol)
-                except Exception as e:
-                    self.logger.error(f"Pattern analysis failed for {symbol}: {e}")
-                    continue
-                if pattern_analysis.get('valid'):
-                    self.logger.info(f"Valid pattern found for {symbol}")
-                    try:
-                        bars = self.data_handler.get_intraday_bars(symbol, '1Min', 60)
-                        quote_data = self.data_handler.get_quote_data([symbol])
-                        entry_price = quote_data[symbol]['ask'] if symbol in quote_data else None
-                        if entry_price is None:
-                            self.logger.warning(f"Entry price unavailable for {symbol}. Skipping.")
-                            continue
-                        stop_price = self.risk_manager.calculate_stop_loss(symbol, entry_price, bars)
-                        signal = {
-                            'symbol': symbol,
-                            'entry_price': entry_price,
-                            'stop_price': stop_price,
-                            'pattern_strength': pattern_analysis['pattern_strength'],
-                            'timestamp': datetime.now()
-                        }
-                        result = self.trade_executor.execute_entry(signal)
-                        if result.get('success'):
-                            self.monitor.log_system_event('INFO', f"Position opened: {symbol}", result)
-                    except Exception as e:
-                        self.logger.error(f"Trade execution failed for {symbol}: {e}")
+            future = self.executor.submit(self._run_trading_cycle)
+            future.result(timeout=self.max_scan_seconds)
+        except FuturesTimeout:
+            self.logger.error(f"Trading cycle exceeded {self.max_scan_seconds}s timeout")
+        except Exception as e:
+            self.logger.error(f"Error in trading cycle: {e}")
+
+    def _run_trading_cycle(self):
+        try:
+            candidates = self.screener.screen()
+            for candidate in candidates:
+                if candidate['symbol'] not in self.trade_executor.active_trades:
+                    signal = self._analyze_pattern(candidate)
+                    if signal:
+                        self.trade_executor.execute_entry(signal)
+            self.trade_executor.update_active_positions()
             self.last_scan_time = datetime.now()
         except Exception as e:
-            self.logger.critical(f"Fatal error in scan_market: {e}")
+            self.logger.error(f"Error in trading cycle: {e}")
 
-    def update_positions(self):
+    def _analyze_pattern(self, candidate: Dict) -> Optional[Dict]:
         try:
-            self.trade_executor.check_max_hold_time()
-            self.trade_executor.update_stops()
-            
-            for symbol, position in list(self.trade_executor.active_trades.items()):
-                if position and 'entry_time' in position:
-                    if datetime.now() - position['entry_time'] > timedelta(hours=2):
-                        self.logger.info(f"Closing {symbol} due to stalled momentum")
-                        try:
-                            self.trade_executor.execute_exit(symbol, reason="time_stop")
-                        except Exception as e:
-                            self.logger.error(f"Error executing exit for {symbol}: {e}")
+            pattern = self.pattern_analyzer.analyze_pattern(
+                candidate['symbol'],
+                is_premarket=False,
+                gap_percent=candidate.get('gap_percent', 0)
+            )
+            if pattern.get('valid', False):
+                return {
+                    'symbol': candidate['symbol'],
+                    'entry_price': pattern['entry_price'],
+                    'stop_price': pattern['stop_price'],
+                    'pattern_strength': pattern.get('pattern_strength', 0),
+                    'gap_percent': candidate.get('gap_percent', 0)
+                }
         except Exception as e:
-            self.logger.error(f"Error updating positions: {e}")
+            self.logger.error(f"Pattern analysis error for {candidate['symbol']}: {e}")
+        return None
 
-    def check_risk_limits(self):
+    def _generate_daily_report(self):
         try:
-            self.risk_manager.update_daily_pnl()
-            account = self.api.get_account()
-            equity = float(account.equity)
-            
-            if self.risk_manager.peak_balance > 0:
-                drawdown = ((self.risk_manager.peak_balance - equity) / self.risk_manager.peak_balance) * 100
-                if drawdown >= self.config.risk.MAX_DRAWDOWN_PERCENT * 1.2:
-                    self.logger.critical(f"EMERGENCY: Drawdown {drawdown:.2f}% exceeds limits")
-                    self.risk_manager.emergency_liquidate_all()
-                    self.running = False
-            
-            max_daily_loss_dollars = equity * (self.config.risk.MAX_DAILY_LOSS_PERCENT / 100.0)
-            if self.risk_manager.daily_pnl <= -max_daily_loss_dollars:
-                self.logger.warning("Daily loss limit reached. Closing all positions.")
-                for symbol in list(self.trade_executor.active_trades.keys()):
-                    try:
-                        self.trade_executor.execute_exit(symbol, reason="daily_loss_limit")
-                    except Exception as e:
-                        self.logger.error(f"Error executing exit for {symbol}: {e}")
-        except Exception as e:
-            self.logger.error(f"Error checking risk limits: {e}")
-
-    def generate_report(self):
-        try:
-            trades = getattr(self.trade_executor, "trade_history", [])
-            stats = compute_statistics(trades=trades)
-            report = generate_text_report(stats, title="LIVE PERFORMANCE")
-            self.logger.info(report)
+            stats = compute_statistics(
+                trades=self.trade_executor.trade_history,
+                equity_curve=[],
+                initial_capital=10000,
+                final_capital=10000,
+                daily_returns=None,
+                trading_days=1
+            )
+            report = generate_text_report(stats, title="DAILY TRADING REPORT")
+            self.logger.info("\n" + report)
         except Exception as e:
             self.logger.error(f"Error generating report: {e}")
 
     def shutdown(self):
         self.logger.info("Shutting down trading system...")
         self.running = False
-        for symbol in list(self.trade_executor.active_trades.keys()):
-            try:
-                self.trade_executor.execute_exit(symbol, reason="system_shutdown")
-            except Exception as e:
-                self.logger.error(f"Error executing exit for {symbol} during shutdown: {e}")
         try:
-            self.api.cancel_all_orders()
-        except Exception:
-            pass
-        self.generate_report()
-        self.logger.info("Trading system shutdown complete")
+            self.trade_executor.close_all_positions()
+            self.executor.shutdown(wait=True, cancel_futures=True)
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {e}")
+        self.logger.info("Shutdown complete")
+
+
+if __name__ == "__main__":
+    config = TradingConfig()
+    system = TradingSystem(config)
+    system.start()

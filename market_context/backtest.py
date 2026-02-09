@@ -1,4 +1,4 @@
-# =====================================================
+﻿# =====================================================
 # market_context.backtest.py - Market Context Analysis (Backtest)
 # =====================================================
 
@@ -40,10 +40,11 @@ class BacktestMarketContext:
             self.logger.error(f"Failed to read {fp}: {e}")
             return pd.DataFrame()
 
-        expected = ['Date', 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
-        missing = [c for c in expected if c not in df.columns]
+        # ✅ Volume is optional (VIX doesn't have volume)
+        required = ['Date', 'Open', 'High', 'Low', 'Close', 'Adj Close']
+        missing = [c for c in required if c not in df.columns]
         if missing:
-            self.logger.error(f"{name} missing columns: {missing}")
+            self.logger.error(f"{name} missing required columns: {missing}")
             return pd.DataFrame()
 
         def _clean_num(s: pd.Series, allow_commas: bool) -> pd.Series:
@@ -56,17 +57,25 @@ class BacktestMarketContext:
         for col in price_cols:
             df[col] = _clean_num(df[col], allow_commas=has_commas_in_price)
 
-        # Volume: do string operations first, then convert; avoid replace() downcasting
-        vol = df['Volume'].astype(str).str.replace(",", "", regex=False).str.strip()
-        if treat_dash_volume_as_nan:
-            # Treat literal "-" as missing without triggering dtype downcasting warnings
-            vol = vol.mask(vol.eq("-"), np.nan)
-        df['Volume'] = pd.to_numeric(vol, errors="coerce")
+        # ✅ Handle Volume if present (VIX won't have it)
+        if 'Volume' in df.columns:
+            vol = df['Volume'].astype(str).str.replace(",", "", regex=False).str.strip()
+            if treat_dash_volume_as_nan:
+                vol = vol.mask(vol.eq("-"), np.nan)
+            df['Volume'] = pd.to_numeric(vol, errors="coerce")
+        else:
+            df['Volume'] = 0  # VIX has no volume
 
+        # ✅ Parse dates with correct format (MM/DD/YY)
         try:
-            df['date'] = pd.to_datetime(df['Date'], format="%b %d, %Y").dt.normalize()
+            df['date'] = pd.to_datetime(df['Date'], format="%m/%d/%y").dt.normalize()
         except Exception:
-            df['date'] = pd.to_datetime(df['Date']).dt.normalize()
+            self.logger.warning(f"Date format inference for {name}")
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
+                df['date'] = pd.to_datetime(df['Date']).dt.normalize()
+            
         df = df.sort_values('date').reset_index(drop=True)
         return df[['date', 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']]
 

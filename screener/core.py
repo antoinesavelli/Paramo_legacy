@@ -141,6 +141,18 @@ class UnifiedScreener:
         else:
             stats["after_relative_volume_filter"] = len(candidates_df)
         
+        # ✅ NEW: Apply fundamental filters (float and marketcap)
+        if self.config.screening.ENABLE_FLOAT_FILTER or self.config.screening.ENABLE_MARKETCAP_FILTER:
+            candidates_df = self._apply_fundamental_filters(
+                candidates_df, day, stats
+            )
+            
+            if candidates_df.empty:
+                self.logger.warning("All candidates filtered by fundamental filters")
+                return {"signals": signals, "diagnostics": diagnostics, "stats": stats}
+        else:
+            stats["after_fundamental_filter"] = len(candidates_df)
+        
         # Get session configuration
         session_cfg = self.config.session
         premarket_enabled = session_cfg.PREMARKET_ENABLED
@@ -238,9 +250,9 @@ class UnifiedScreener:
             daily_volume = row.get('daily_volume', None)
             stats["processed"] += 1
             
-            # Optional news gate
+            # Optional news gate (✅ NOW WITH TIME-AWARE CHECKING)
             if self.news and not self._check_news_catalyst(
-                symbol, day, gap_pct, rel_vol, diagnostics, stats
+                symbol, day, gap_pct, rel_vol, entry_ts, diagnostics, stats  # ✅ Pass entry_ts
             ):
                 continue
             
@@ -530,6 +542,109 @@ class UnifiedScreener:
         
         return candidates_df
     
+    def _apply_fundamental_filters(
+        self,
+        candidates_df: pd.DataFrame,
+        day: datetime,
+        stats: Dict
+    ) -> pd.DataFrame:
+        """
+        Apply fundamental filters (float and market cap) using aggregate data.
+        
+        This filters stocks based on shares outstanding and market capitalization
+        BEFORE loading intraday data.
+        """
+        enable_float = self.config.screening.ENABLE_FLOAT_FILTER
+        enable_marketcap = self.config.screening.ENABLE_MARKETCAP_FILTER
+        
+        if not enable_float and not enable_marketcap:
+            stats["after_fundamental_filter"] = len(candidates_df)
+            return candidates_df
+        
+        max_float = self.config.screening.MAX_FLOAT
+        max_marketcap = self.config.screening.MAX_MARKETCAP
+        
+        self.logger.info(
+            f"[FUNDAMENTAL FILTER] Filtering {len(candidates_df)} candidates "
+            f"(max float: {max_float:,}, max marketcap: ${max_marketcap:,.0f})"
+        )
+        
+        # Get all symbols' daily stats from aggregates
+        day_aggregates = self.aggregate_handler.get_day_aggregates(day)
+        
+        if day_aggregates is None or day_aggregates.empty:
+            self.logger.warning(f"No aggregate data for fundamental filter on {day.date()}")
+            stats["after_fundamental_filter"] = len(candidates_df)
+            return candidates_df
+        
+        # Check if fundamental columns exist
+        has_float = 'float' in day_aggregates.columns
+        has_marketcap = 'marketcap' in day_aggregates.columns
+        
+        if not has_float and not has_marketcap:
+            self.logger.warning("No fundamental data (float/marketcap) in aggregates - skipping filter")
+            stats["after_fundamental_filter"] = len(candidates_df)
+            return candidates_df
+        
+        # Create lookup dictionaries
+        if has_float:
+            float_lookup = day_aggregates.set_index('symbol')['float'].to_dict()
+        if has_marketcap:
+            marketcap_lookup = day_aggregates.set_index('symbol')['marketcap'].to_dict()
+        
+        # Add fundamental data to candidates
+        candidates_df = candidates_df.copy()
+        
+        if has_float and enable_float:
+            candidates_df['float'] = candidates_df['symbol'].map(float_lookup)
+        
+        if has_marketcap and enable_marketcap:
+            candidates_df['marketcap'] = candidates_df['symbol'].map(marketcap_lookup)
+        
+        # Apply filters
+        pre_filter = len(candidates_df)
+        filter_mask = pd.Series([True] * len(candidates_df), index=candidates_df.index)
+        
+        filtered_reasons = {}
+        
+        if enable_float and has_float:
+            float_mask = (
+                candidates_df['float'].notna() & 
+                (candidates_df['float'] <= max_float)
+            )
+            failed_float = (~float_mask).sum()
+            if failed_float > 0:
+                filtered_reasons['high_float'] = failed_float
+                self.logger.debug(f"  Float filter: {failed_float} stocks exceed {max_float:,} shares")
+            filter_mask &= float_mask
+        
+        if enable_marketcap and has_marketcap:
+            marketcap_mask = (
+                candidates_df['marketcap'].notna() & 
+                (candidates_df['marketcap'] <= max_marketcap)
+            )
+            failed_marketcap = (~marketcap_mask).sum()
+            if failed_marketcap > 0:
+                filtered_reasons['high_marketcap'] = failed_marketcap
+                self.logger.debug(f"  Marketcap filter: {failed_marketcap} stocks exceed ${max_marketcap:,.0f}")
+            filter_mask &= marketcap_mask
+        
+        candidates_df = candidates_df[filter_mask]
+        stats["after_fundamental_filter"] = len(candidates_df)
+        
+        filtered_count = pre_filter - len(candidates_df)
+        
+        self.logger.info(
+            f"[FILTER] Fundamental filter | "
+            f"Before: {pre_filter} | After: {len(candidates_df)} | Filtered: {filtered_count}"
+        )
+        
+        if filtered_count > 0:
+            for reason, count in filtered_reasons.items():
+                stats["reject_reasons"][reason] = count
+        
+        return candidates_df
+    
     def _calculate_rvol_live(self, symbols: List[str]) -> Dict[str, float]:
         """Calculate RVOL for live trading using current quote data."""
         rel_vols = {}
@@ -584,62 +699,83 @@ class UnifiedScreener:
         day: datetime, 
         gap_pct: float, 
         rel_vol: Optional[float],
+        entry_time: pd.Timestamp,  # ✅ NEW: Required for time-aware checking
         diagnostics: List[Dict], 
         stats: Dict
     ) -> bool:
-        """Check news catalyst: requires presence of news with acceptable negative sentiment."""
+        """
+        Check news catalyst with time-aware filtering.
+        
+        Rules:
+        1. If neg > 0.08, reject immediately
+        2. If neg <= 0.08, only allow trading after news published
+        """
         ignore_catalyst = getattr(self.config.backtest, "IGNORE_CATALYST", True)
         
         if ignore_catalyst:
             return True
         
         try:
-            news = self.news.analyze_news_impact(symbol, date=day)
+            # ✅ Use time-aware checking
+            news = self.news.check_news_approval(symbol, entry_time)
         except Exception as e:
             self.logger.debug(f"[NEWS] {symbol} - Analysis error: {e}")
-            news = {}
+            news = {'approved': False, 'reason': 'error'}
         
-        # Check if has news
-        if not news.get('has_news', False):
-            diagnostics.append(self.diagnostic_creator.create_rejection(
-                date=day,
-                symbol=symbol,
-                gap_percent=gap_pct,
-                relative_volume=rel_vol,
-                reason="no_news",
-                article_count=0
-            ))
-            stats["reject_reasons"]["no_news"] += 1
-            self.logger.debug(f"[REJECT] {symbol} - No news articles found")
-            return False
-        
-        # Check negative sentiment filter
-        if not news.get('passes_filter', False):
-            max_neg = news.get('max_negative', 0.0)
-            max_threshold = getattr(self.config.backtest, 'MAX_NEGATIVE_SENTIMENT', 0.05)
+        # Check approval
+        if not news.get('approved', False):
+            reason = news.get('reason', 'unknown')
             
             diagnostics.append(self.diagnostic_creator.create_rejection(
                 date=day,
                 symbol=symbol,
                 gap_percent=gap_pct,
                 relative_volume=rel_vol,
-                reason="excessive_negative_sentiment",
+                reason=f"news_{reason}",
                 article_count=news.get('article_count', 0),
-                max_negative=max_neg,
-                threshold=max_threshold
+                max_negative=news.get('max_negative', 0.0),
+                earliest_news_time=news.get('earliest_news_time'),
+                articles_before_time=news.get('articles_before_time', 0)
             ))
-            stats["reject_reasons"]["excessive_negative_sentiment"] += 1
-            self.logger.debug(
-                f"[REJECT] {symbol} - Excessive negative sentiment: "
-                f"{max_neg:.3f} > {max_threshold:.3f}"
-            )
+            stats["reject_reasons"][f"news_{reason}"] += 1
+            
+            # Enhanced logging
+            if reason == 'excessive_negative_sentiment':
+                self.logger.debug(
+                    f"[REJECT] {symbol} - Excessive negative sentiment: "
+                    f"{news.get('max_negative', 0):.3f} > 0.08"
+                )
+            elif reason == 'news_not_yet_published':
+                earliest = news.get('earliest_news_time')
+                if earliest:
+                    earliest_et = earliest.tz_convert('US/Eastern')
+                    entry_et = entry_time.tz_convert('US/Eastern')
+                    self.logger.debug(
+                        f"[REJECT] {symbol} - News not yet published at entry time "
+                        f"(entry: {entry_et.strftime('%H:%M:%S')} ET, "
+                        f"earliest news: {earliest_et.strftime('%H:%M:%S')} ET)"
+                    )
+            else:
+                self.logger.debug(f"[REJECT] {symbol} - {reason}")
+            
             return False
         
-        # Passed: Has news and acceptable sentiment
+        # ✅ PASSED: Sentiment OK and news already published
         article_count = news.get('article_count', 0)
         max_neg = news.get('max_negative', 0.0)
-        self.logger.info(
-            f"[NEWS] {symbol} - PASS: {article_count} articles, "
-            f"max_neg={max_neg:.3f}"
-        )
+        earliest = news.get('earliest_news_time')
+        
+        if earliest:
+            earliest_et = earliest.tz_convert('US/Eastern')
+            entry_et = entry_time.tz_convert('US/Eastern')
+            time_diff = (entry_time - earliest).total_seconds() / 60  # minutes
+            
+            self.logger.info(
+                f"[NEWS] {symbol} - PASS: {article_count} articles, "
+                f"max_neg={max_neg:.3f}, "
+                f"earliest={earliest_et.strftime('%H:%M')} ET, "
+                f"entry={entry_et.strftime('%H:%M')} ET "
+                f"({time_diff:.0f}min after news)"
+            )
+        
         return True
