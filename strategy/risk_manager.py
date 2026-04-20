@@ -223,7 +223,7 @@ class RiskManager:
             if price_risk <= 0:
                 return {'approved': False, 'reason': 'Invalid stop price'}
             
-            # Calculate position size with market context adjustment
+                        # Calculate position size with market context adjustment
             position_size = calc_position_size_percentage(
                 entry=entry_price,
                 stop=stop_price,
@@ -232,6 +232,20 @@ class RiskManager:
                 max_position_pct=self.config.risk.MAX_POSITION_SIZE_PERCENT,
                 market_adjustment=market_adjustment
             )
+
+            # ✅ FIX 5: Explicit warning when position size collapses to zero so the
+            # cause (tight stop, low equity, or aggressive market adjustment) is visible.
+            if position_size == 0:
+                risk_budget = equity * (self.config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT / 100.0) * market_adjustment
+                risk_per_share = entry_price - stop_price
+                self.logger.warning(
+                    f"Entry blocked for {symbol}: position size calculated as 0 | "
+                    f"equity=${equity:.2f}, "
+                    f"risk_budget=${risk_budget:.2f} ({self.config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT}% * {market_adjustment:.2f}x adj), "
+                    f"risk_per_share=${risk_per_share:.4f} (entry=${entry_price:.2f} - stop=${stop_price:.2f}), "
+                    f"max_position_value=${equity * (self.config.risk.MAX_POSITION_SIZE_PERCENT / 100.0) * market_adjustment:.2f}"
+                )
+                return {'approved': False, 'reason': 'Position size calculated as zero (insufficient equity or stop too tight)'}
             
             # Check if we have enough buying power
             required_capital = position_size * entry_price

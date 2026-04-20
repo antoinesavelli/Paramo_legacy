@@ -11,6 +11,7 @@ from utils.logging import get_logger
 from market_context.scoring import (
     calculate_market_score,
     classify_environment,
+    should_trade_from_indicators,
 )
 
 class BacktestMarketContext:
@@ -201,6 +202,17 @@ class BacktestMarketContext:
 
     def _classify_environment(self, context: Dict) -> str:
         return classify_environment(context, self.config.market_context)
+
+    def should_trade(self) -> bool:
+        """
+        Gate trading for the current day based on market indicators.
+        Delegates to the shared scoring logic used by live MarketContext.
+        Returns True if conditions are acceptable, False to skip the day.
+        """
+        return should_trade_from_indicators(
+            self.market_indicators,
+            self.config.market_context
+        )
 
     def get_intraday_bars(self, symbol, session_date: datetime, data_handler) -> pd.DataFrame:
         """

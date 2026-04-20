@@ -17,7 +17,7 @@ import pandas as pd
 class ScreeningConfigView:
     MIN_GAP_PERCENT: float
     MIN_PRICE: float
-    MAX_PRICE: float
+    # MAX_PRICE removed — no upper price ceiling applied at the gap filter stage
     MIN_RELATIVE_VOLUME: float
     MIN_ABSOLUTE_VOLUME: int
 
@@ -27,19 +27,19 @@ def cfg_view_from(config) -> ScreeningConfigView:
     return ScreeningConfigView(
         MIN_GAP_PERCENT=s.MIN_GAP_PERCENT,
         MIN_PRICE=s.MIN_PRICE,
-        MAX_PRICE=s.MAX_PRICE,
         MIN_RELATIVE_VOLUME=s.MIN_RELATIVE_VOLUME,
         MIN_ABSOLUTE_VOLUME=s.MIN_ABSOLUTE_VOLUME
     )
 
 
 def filter_price_and_gap(gaps_df: pd.DataFrame, cfg: ScreeningConfigView) -> pd.DataFrame:
+    """Filter candidates by minimum gap % and minimum price only. No upper price ceiling."""
     if gaps_df is None or gaps_df.empty:
         return pd.DataFrame(columns=["symbol", "gap_percent", "last_price", "open_price", "prev_close"])
     m = (
         (gaps_df["gap_percent"] >= cfg.MIN_GAP_PERCENT) &
-        (gaps_df["last_price"] >= cfg.MIN_PRICE) &
-        (gaps_df["last_price"] <= cfg.MAX_PRICE)
+        (gaps_df["last_price"] >= cfg.MIN_PRICE)
+        # MAX_PRICE check removed
     )
     return gaps_df.loc[m].copy()
 
@@ -62,11 +62,13 @@ class Candidate:
 # Core rule helpers (pure)
 # -------------------------------
 def is_price_valid(last_price: Optional[float], cfg: ScreeningConfigView) -> bool:
+    """Validates that price meets the minimum floor. No upper ceiling applied."""
     try:
         if last_price is None:
             return False
         p = float(last_price)
-        return cfg.MIN_PRICE <= p <= cfg.MAX_PRICE
+        return p >= cfg.MIN_PRICE
+        # MAX_PRICE check removed
     except Exception:
         return False
 
@@ -77,22 +79,22 @@ def calculate_relative_volume(daily_bars: pd.DataFrame, current_volume: Optional
         return None
     try:
         vols = daily_bars["volume"].astype(float)
-        
-        # ✅ Exclude zero-volume days (halts, no trading)
+
+        # Exclude zero-volume days (halts, no trading)
         valid_vols = vols[vols > 0]
-        
-        if len(valid_vols) < 5:  # Need at least 5 valid days
+
+        if len(valid_vols) < 5:
             return None
-        
+
         baseline = valid_vols.mean()
-        
+
         if not baseline or baseline <= 0:
             return None
-        
+
         cv = float(current_volume or 0)
         if cv <= 0:
             return None
-        
+
         return cv / baseline
     except Exception:
         return None

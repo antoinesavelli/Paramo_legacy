@@ -396,3 +396,7 @@ class LocalDataHandler:
         cache_size = len(self._day_cache)
         self._day_cache.clear()
         logger.info(f"Cleared day cache ({cache_size} entries)")
+    
+    def get_intraday_bars(self, symbol: str, start=None, end=None, timeframe: str = '1Min') -> pd.DataFrame:
+        """Get intraday bar data for pattern analysis. Wraps get_bars for screener compatibility."""
+        return self.get_bars(symbol, timeframe, start=start, end=end)

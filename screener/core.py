@@ -238,9 +238,8 @@ class UnifiedScreener:
                 f"[MARKET CONTEXT] Score: {mc_score:.1f} | Environment: {mc_env}"
             )
         
-        # Get price range from config
+        # Get price floor from config — MAX_PRICE removed
         min_price = self.config.screening.MIN_PRICE
-        max_price = self.config.screening.MAX_PRICE
         
         # Analyze each candidate
         for idx, (_, row) in enumerate(candidates_df.iterrows(), 1):
@@ -250,9 +249,10 @@ class UnifiedScreener:
             daily_volume = row.get('daily_volume', None)
             stats["processed"] += 1
             
-            # Optional news gate (✅ NOW WITH TIME-AWARE CHECKING)
+            # Optional news gate (time-aware: use session start + warmup as proxy entry time)
+            news_probe_ts = session_start_utc + pd.Timedelta(minutes=warmup)
             if self.news and not self._check_news_catalyst(
-                symbol, day, gap_pct, rel_vol, entry_ts, diagnostics, stats  # ✅ Pass entry_ts
+                symbol, day, gap_pct, rel_vol, news_probe_ts, diagnostics, stats
             ):
                 continue
             
@@ -312,7 +312,7 @@ class UnifiedScreener:
             entry_row = bars.iloc[warmup - 1]
             entry_price = float(entry_row['close'])
             
-            if entry_price < min_price or entry_price > max_price:
+            if entry_price < min_price:
                 diagnostics.append({
                     "date": pd.Timestamp(day).date(),
                     "symbol": symbol,
@@ -322,15 +322,14 @@ class UnifiedScreener:
                     "phase": "reject",
                     "reason": "price_out_of_range",
                     "entry_price": entry_price,
-                    "min_price": min_price,
-                    "max_price": max_price
+                    "min_price": min_price
                 })
                 stats["reject_reasons"]["price_out_of_range"] += 1
                 stats["after_price_filter"] = stats["processed"] - stats["reject_reasons"]["price_out_of_range"]
                 
                 self.logger.debug(
-                    f"[REJECT] {symbol} - Price ${entry_price:.2f} outside range "
-                    f"(${min_price:.2f} - ${max_price:.2f})"
+                    f"[REJECT] {symbol} - Price ${entry_price:.2f} below minimum limit "
+                    f"(${min_price:.2f})"
                 )
                 continue
             

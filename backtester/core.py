@@ -172,8 +172,8 @@ def _calculate_gate_impact_matrix(diag_df: pd.DataFrame) -> pd.DataFrame:
         winner_like = gate_trades.apply(matches_winner_profile, axis=1).sum()
         loser_like = gate_trades.apply(matches_loser_profile, axis=1).sum()
         
-        winner_pct = (winner_like / count * 100) if count > 0 else 0
-        loser_pct = (loser_like / count * 100) if count > 0 else 0
+        winner_pct = (winner_like / count * 100) if count > 0 == 0 else 0
+        loser_pct = (loser_like / count * 100) if count > 0 == 0 else 0
         
         # Estimate net value: assume winner-like would have avg winner PnL, loser-like would have avg loser PnL
         avg_winner_pnl = winners['pnl'].mean() if not winners.empty and 'pnl' in winners.columns else 0
@@ -217,7 +217,7 @@ def _identify_false_negative_signatures(diag_df: pd.DataFrame) -> pd.DataFrame:
         (rejected.get('pattern_strength', 0) >= 15) &  # High score
         (
             (rejected.get('parabolic_angle', 0) < 0) |  # Negative angle
-            (rejected.get('step_up_steps', 0).between(2, 3))  # 2-3 steps
+            (rejected['step_up_steps'].between(2, 3) if 'step_up_steps' in rejected.columns else False)  # 2-3 steps
         ) &
         (
             rejected['reason'].str.contains('retention', case=False, na=False) |

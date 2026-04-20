@@ -3,7 +3,7 @@
 # Alpaca API Integration for Extreme Gap Trading
 # =====================================================
 
-from config.config import TradingConfig  # ✅ FIXED: Added .config
+from config.config import TradingConfig
 from data_handler.api import APIDataHandler
 from data_handler.local import LocalDataHandler
 from screener.live import LiveScreener
@@ -15,6 +15,7 @@ from market_context.live import MarketContext
 from utils.reporting import compute_statistics, generate_text_report
 import alpaca_trade_api as tradeapi
 from datetime import datetime, timedelta
+from typing import Dict, Optional
 import logging
 import signal
 import sys
@@ -38,20 +39,19 @@ def _ensure_dir(path: str):
 def ensure_storage_layout(market_root: str = None, news_root: str = None, logger: logging.Logger = None):
     """
     Ensure required directory structure exists.
-    
+
     Expected structure:
     - <market_root>/ticker_data/YYYY/MM/YYYY-MM-DD.parquet (market data)
-    - T:/trading/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)  # ✅ FIXED: Updated format
+    - T:/trading/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)
     - <market_root>/news_data/ (news data)
     - <market_root>/market_context/ (SPY, VIX, RUT CSVs)
     """
     logger = logger or logging.getLogger(__name__)
-    
+
     if market_root:
         _ensure_dir(market_root)
-        # Don't create daily_aggregates subdirectory here - it's at root level now
         logger.info(f"Storage ready for market data at: {market_root}")
-    
+
     if news_root:
         _ensure_dir(news_root)
         logger.info(f"Storage ready for news at: {news_root}")
@@ -64,28 +64,33 @@ class TradingSystem:
         self.config = config or TradingConfig()
         setup_logging(level=logging.INFO, log_file="run.log")
         self.logger = logging.getLogger(__name__)
-        
+
         self.api = tradeapi.REST(
             self.config.api.ALPACA_API_KEY,
             self.config.api.ALPACA_SECRET_KEY,
             self.config.api.ALPACA_BASE_URL,
             api_version='v2'
         )
-        
+
         self.data_handler = APIDataHandler(self.config)
-        self.screener = LiveScreener(self.config, self.data_handler)
+
+        # ✅ FIX 1: pattern_analyzer must be created before LiveScreener so it can be passed in
         self.pattern_analyzer = PatternAnalyzer(self.config, self.data_handler)
+
+        # ✅ FIX 1: Pass pattern_analyzer as required third argument
+        self.screener = LiveScreener(self.config, self.data_handler, self.pattern_analyzer)
+
         self.risk_manager = RiskManager(self.config, self.api)
-        
+
         self.market_context = MarketContext(self.config, self.api)
-        
+
         self.trade_executor = TradeExecutor(
-            self.config, 
-            self.api, 
+            self.config,
+            self.api,
             self.risk_manager,
             market_context=self.market_context
         )
-        
+
         self.monitor = Monitor(self.config)
         self.news_integration = NewsIntegrationLive(self.config)
         self.running = False
@@ -115,7 +120,9 @@ class TradingSystem:
             now = datetime.utcnow()
             delta = (now - self.last_heartbeat).total_seconds()
             if delta > self.watchdog_interval * 3:
-                self.logger.critical(f"Watchdog: system stalled (last heartbeat {delta:.0f}s ago). Initiating shutdown.")
+                self.logger.critical(
+                    f"Watchdog: system stalled (last heartbeat {delta:.0f}s ago). Initiating shutdown."
+                )
                 try:
                     self.shutdown()
                 finally:
@@ -154,10 +161,34 @@ class TradingSystem:
         self.logger.info("Running market open tasks...")
         try:
             self.market_context.update_market_context()
+
+            # ✅ FIX 4: Log full market context state so gate decisions are visible in logs
+            indicators = self.market_context.market_indicators
+            score = indicators.get('market_score', 'N/A')
+            env = indicators.get('trading_environment', 'N/A')
+            vix = indicators.get('vix_level', {})
+            spy = indicators.get('spy_trend', {})
+            rut = indicators.get('rut_trend', {})
+            self.logger.info(
+                f"Market context update complete | "
+                f"Score: {score} | Environment: {env} | "
+                f"VIX: {vix.get('level', 'N/A')} ({vix.get('classification', 'N/A')}) | "
+                f"SPY trend: {spy.get('trend', 'N/A')} | "
+                f"RUT trend: {rut.get('trend', 'N/A')}"
+            )
+
             if not self.market_context.should_trade():
-                self.logger.warning("Market conditions unfavorable - trading disabled for today")
+                self.logger.warning(
+                    f"Trading DISABLED for today | "
+                    f"Score: {score} (threshold: {self.config.market_context.SHOULD_TRADE_MIN_SCORE_IF_UNFAVORABLE}) | "
+                    f"Environment: {env} | "
+                    f"VIX classification: {vix.get('classification', 'N/A')} | "
+                    f"BLOCK_ON_VIX_EXTREME={self.config.market_context.BLOCK_ON_VIX_EXTREME}"
+                )
                 self.running = False
                 return
+
+            self.logger.info("Market conditions acceptable - trading ENABLED")
             self.running = True
         except Exception as e:
             self.logger.error(f"Error in market open tasks: {e}")
@@ -194,35 +225,15 @@ class TradingSystem:
 
     def _run_trading_cycle(self):
         try:
-            candidates = self.screener.screen()
+            # ✅ FIX 2: Call the correct method name run_screen() instead of screen()
+            candidates = self.screener.run_screen()
             for candidate in candidates:
                 if candidate['symbol'] not in self.trade_executor.active_trades:
-                    signal = self._analyze_pattern(candidate)
-                    if signal:
-                        self.trade_executor.execute_entry(signal)
+                    self.trade_executor.execute_entry(candidate)
             self.trade_executor.update_active_positions()
             self.last_scan_time = datetime.now()
         except Exception as e:
             self.logger.error(f"Error in trading cycle: {e}")
-
-    def _analyze_pattern(self, candidate: Dict) -> Optional[Dict]:
-        try:
-            pattern = self.pattern_analyzer.analyze_pattern(
-                candidate['symbol'],
-                is_premarket=False,
-                gap_percent=candidate.get('gap_percent', 0)
-            )
-            if pattern.get('valid', False):
-                return {
-                    'symbol': candidate['symbol'],
-                    'entry_price': pattern['entry_price'],
-                    'stop_price': pattern['stop_price'],
-                    'pattern_strength': pattern.get('pattern_strength', 0),
-                    'gap_percent': candidate.get('gap_percent', 0)
-                }
-        except Exception as e:
-            self.logger.error(f"Pattern analysis error for {candidate['symbol']}: {e}")
-        return None
 
     def _generate_daily_report(self):
         try:

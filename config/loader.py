@@ -67,33 +67,32 @@ def apply_env_layer(config: TradingConfig, prefix: str = "PARAMO__") -> TradingC
     return cfg
 
 def validate_config(cfg: TradingConfig):
-    """Validate configuration parameters (updated for percentage-based risk without min hold time)."""
+    """Validate configuration parameters."""
     errs = []
-    
-    # Screening validation
-    if cfg.screening.MIN_PRICE >= cfg.screening.MAX_PRICE:
-        errs.append("screening.MIN_PRICE must be < screening.MAX_PRICE")
-    
+
+    # Screening validation — MAX_PRICE no longer exists
+    if cfg.screening.MIN_PRICE <= 0:
+        errs.append("screening.MIN_PRICE must be > 0")
+
     # Risk validation (percentage-based)
     if cfg.risk.STOP_LOSS_PERCENT_OF_ACCOUNT <= 0:
         errs.append("risk.STOP_LOSS_PERCENT_OF_ACCOUNT must be > 0")
-    
+
     if cfg.risk.MAX_POSITION_SIZE_PERCENT <= 0 or cfg.risk.MAX_POSITION_SIZE_PERCENT > 100:
         errs.append("risk.MAX_POSITION_SIZE_PERCENT must be between 0 and 100")
-    
+
     if cfg.risk.MAX_DAILY_LOSS_PERCENT <= 0 or cfg.risk.MAX_DAILY_LOSS_PERCENT > 100:
         errs.append("risk.MAX_DAILY_LOSS_PERCENT must be between 0 and 100")
-    
+
     if cfg.risk.STOP_LOSS_PERCENT_OF_ACCOUNT > cfg.risk.MAX_DAILY_LOSS_PERCENT:
         errs.append("risk.STOP_LOSS_PERCENT_OF_ACCOUNT cannot exceed risk.MAX_DAILY_LOSS_PERCENT")
-    
+
     if cfg.risk.MAX_HOLD_TIME_MINUTES <= 0:
         errs.append("risk.MAX_HOLD_TIME_MINUTES must be > 0")
-    
+
     if cfg.risk.MAX_CONCURRENT_POSITIONS <= 0:
         errs.append("risk.MAX_CONCURRENT_POSITIONS must be > 0")
-    
-    # ATR trailing stop validation (if enabled)
+
     if hasattr(cfg.risk, 'ATR_TRAILING_ENABLED') and cfg.risk.ATR_TRAILING_ENABLED:
         if cfg.risk.ATR_TRAILING_PERIOD <= 0:
             errs.append("risk.ATR_TRAILING_PERIOD must be > 0")
@@ -101,11 +100,10 @@ def validate_config(cfg: TradingConfig):
             errs.append("risk.ATR_TRAILING_MULTIPLIER must be > 0")
         if cfg.risk.ATR_TRAILING_MIN_PROFIT_PCT < 0:
             errs.append("risk.ATR_TRAILING_MIN_PROFIT_PCT must be >= 0")
-    
-    # System validation
+
     if cfg.system.SCAN_INTERVAL_SECONDS < 5:
         errs.append("system.SCAN_INTERVAL_SECONDS must be >= 5")
-    
+
     if errs:
         raise ValueError("Config validation failed:\n - " + "\n - ".join(errs))
 

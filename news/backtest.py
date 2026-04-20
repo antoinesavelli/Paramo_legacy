@@ -107,4 +107,104 @@ class NewsIntegrationBacktest:
                 'max_negative': 0.0,
                 'articles_before_time': 0
             }
-       
+
+        # ── Filter to this symbol ────────────────────────────────────────────
+        sym_col = 'ticker' if 'ticker' in monthly_df.columns else 'symbol'
+        if sym_col not in monthly_df.columns:
+            self.logger.warning(f"News parquet has no ticker/symbol column — columns: {list(monthly_df.columns)}")
+            return {
+                'approved': False,
+                'reason': 'no_news_data',
+                'earliest_news_time': None,
+                'article_count': 0,
+                'max_negative': 0.0,
+                'articles_before_time': 0
+            }
+
+        sym_df = monthly_df[monthly_df[sym_col] == symbol].copy()
+
+        if sym_df.empty:
+            return {
+                'approved': False,
+                'reason': 'no_news_data',
+                'earliest_news_time': None,
+                'article_count': 0,
+                'max_negative': 0.0,
+                'articles_before_time': 0
+            }
+
+        # ── Restrict to same calendar date as trade (ET) ─────────────────────
+        # Avoids stale prior-day articles satisfying the timing gate.
+        date_col = 'date' if 'date' in sym_df.columns else 'published_at'
+        if date_col not in sym_df.columns:
+            self.logger.warning(f"News parquet has no date/published_at column for {symbol}")
+            return {
+                'approved': False,
+                'reason': 'no_news_data',
+                'earliest_news_time': None,
+                'article_count': 0,
+                'max_negative': 0.0,
+                'articles_before_time': 0
+            }
+
+        if sym_df[date_col].dt.tz is None:
+            sym_df[date_col] = sym_df[date_col].dt.tz_localize('UTC')
+        else:
+            sym_df[date_col] = sym_df[date_col].dt.tz_convert('UTC')
+
+        trade_date_et = current_time.tz_convert('US/Eastern').normalize()
+        sym_df = sym_df[
+            sym_df[date_col].dt.tz_convert('US/Eastern').dt.normalize() == trade_date_et
+        ]
+
+        if sym_df.empty:
+            return {
+                'approved': False,
+                'reason': 'no_news_data',
+                'earliest_news_time': None,
+                'article_count': 0,
+                'max_negative': 0.0,
+                'articles_before_time': 0
+            }
+
+        article_count = len(sym_df)
+
+        # ── Sentiment gate ───────────────────────────────────────────────────
+        neg_col = 'negative' if 'negative' in sym_df.columns else 'neg'
+        max_negative = 0.0
+        if neg_col in sym_df.columns:
+            max_negative = float(sym_df[neg_col].max())
+
+        threshold = getattr(self.config.backtest, 'MAX_NEGATIVE_SENTIMENT', 0.08)
+        if max_negative > threshold:
+            return {
+                'approved': False,
+                'reason': 'negative_sentiment',
+                'earliest_news_time': None,
+                'article_count': article_count,
+                'max_negative': max_negative,
+                'articles_before_time': 0
+            }
+
+        # ── Timing gate ──────────────────────────────────────────────────────
+        earliest_news_time = sym_df[date_col].min()
+        articles_before_time = int((sym_df[date_col] <= current_time).sum())
+
+        if current_time < earliest_news_time:
+            return {
+                'approved': False,
+                'reason': 'news_not_yet_published',
+                'earliest_news_time': earliest_news_time,
+                'article_count': article_count,
+                'max_negative': max_negative,
+                'articles_before_time': articles_before_time
+            }
+
+        return {
+            'approved': True,
+            'reason': 'approved',
+            'earliest_news_time': earliest_news_time,
+            'article_count': article_count,
+            'max_negative': max_negative,
+            'articles_before_time': articles_before_time
+        }

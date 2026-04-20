@@ -17,27 +17,28 @@ class APIConfig:
 @dataclass(frozen=True)
 class ScreeningConfig:
     """Screening parameters (unified for all modes and sessions)."""
-    MIN_GAP_PERCENT: float = 50.0  
+    MIN_GAP_PERCENT: float = 10.0
     MIN_PRICE: float = 2.00
-    MAX_PRICE: float = 20.00
-    MIN_FLOAT: int = 0  # Ignored in backtest
-    MAX_FLOAT: int = 20_000_000  # ✅ NEW: Maximum shares outstanding (20 million shares)
-    MAX_MARKETCAP: float = 100_000_000.0  # ✅ NEW: Maximum market cap ($100 million)
+    # MAX_PRICE removed — upper price filtering is no longer applied.
+    # Candidate quality is controlled by MAX_FLOAT, MAX_MARKETCAP, and MIN_GAP_PERCENT.
+    MIN_FLOAT: int = 0
+    MAX_FLOAT: int = 100_000_000
+    MAX_MARKETCAP: float = 2_000_000_000.0
     MIN_RELATIVE_VOLUME: float = 2.0
     ENABLE_RELATIVE_VOLUME: bool = False
     RELATIVE_VOLUME_LOOKBACK_DAYS: int = 10
-    
-    # ✅ Daily volume pre-screening (from aggregates)
-    MIN_DAILY_VOLUME: int = 50_000  # Minimum total daily volume for consideration
-    MIN_CUMULATIVE_VOLUME: int = 10_000  # Minimum cumulative intraday volume threshold
-    ENABLE_DAILY_VOLUME_PRESCREEN: bool = True  # Pre-filter using daily aggregates
-    
-    # ✅ Fundamental filters (from aggregates)
-    ENABLE_FLOAT_FILTER: bool = True  # Enable float (shares outstanding) filter
-    ENABLE_MARKETCAP_FILTER: bool = True  # Enable market cap filter
-    
-    # ✅ Cumulative volume tracking (intraday files)
-    CUMULATIVE_VOLUME: bool = False  # Enable cumulative volume column in intraday data
+
+    # Daily volume pre-screening (from aggregates)
+    MIN_DAILY_VOLUME: int = 50_000
+    MIN_CUMULATIVE_VOLUME: int = 10_000
+    ENABLE_DAILY_VOLUME_PRESCREEN: bool = True
+
+    # Fundamental filters (from aggregates)
+    ENABLE_FLOAT_FILTER: bool = True
+    ENABLE_MARKETCAP_FILTER: bool = True
+
+    # Cumulative volume tracking (intraday files)
+    CUMULATIVE_VOLUME: bool = False
 
 @dataclass(frozen=True)
 class GapMonitoringConfig:
@@ -245,7 +246,7 @@ class MarketContextConfig:
 class BacktestConfig:
     """Backtest configuration (intraday only)."""
     START_DATE: str = '2024-01-03'
-    END_DATE: str = '2024-01-10'
+    END_DATE: str = '2024-01-31'
     INITIAL_CAPITAL: float = 1000.0
 
     # ✅ UPDATED: Simplified paths - daily_aggregates now at root level
