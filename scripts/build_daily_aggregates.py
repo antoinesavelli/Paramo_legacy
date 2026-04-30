@@ -44,7 +44,7 @@ def load_fundamentals_for_date(fundamentals_dir: Path, date: datetime) -> pd.Dat
     Load fundamentals data for a specific date.
     
     Args:
-        fundamentals_dir: Base directory for fundamentals (T:\\trading\\fundamentals)
+        fundamentals_dir: Base directory for fundamentals (S:\\trading\\fundamentals)
         date: Date object
         
     Returns:

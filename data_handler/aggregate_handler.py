@@ -206,7 +206,7 @@ class AggregateDataHandler:
         
         try:
             # ✅ Load only required columns for memory efficiency
-            df = pd.read_parquet(file_path)
+            df = pd.read_parquet(file_path, dtype_backend='numpy_nullable')
             
             # Validate required columns
             missing = [col for col in self.REQUIRED_COLUMNS if col not in df.columns]
@@ -216,7 +216,7 @@ class AggregateDataHandler:
             
             # Ensure date column is proper date type
             if 'date' in df.columns:
-                df['date'] = pd.to_datetime(df['date']).dt.date
+                df['date'] = pd.to_datetime(df['date'], cache=False).dt.date
             
             # Add to cache
             self._cache[year_month] = df

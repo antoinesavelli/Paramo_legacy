@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>501e9449-2deb-40f7-ab18-abb8a953e303</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>run\backtest.py</StartupFile>
+    <StartupFile>scripts\news_audit.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -32,11 +32,13 @@ NEWS_API_KEY=d55ded5ee2014b8c9b50c7e81ef48dc6</Environment>
     <Compile Include="backtester\exit_simulator.py" />
     <Compile Include="backtester\__init__.py" />
     <Compile Include="data_handler\__init__.py" />
-    <Compile Include="news_audit.py" />
+    <Compile Include="scripts\clean_parquet_backups.py" />
+    <Compile Include="scripts\news_audit.py" />
     <Compile Include="scripts\pattern_optimization\analyze_optimization.py" />
     <Compile Include="scripts\pattern_optimization\create_custom_params.py" />
     <Compile Include="scripts\examine_intraday_structure.py" />
     <Compile Include="scripts\pattern_optimization\optimize_parameters.py" />
+    <Compile Include="scripts\sentiment_analysis.py" />
     <Compile Include="temp.py" />
     <Compile Include="utils\trade_metrics.py" />
     <Compile Include="utils\cli_common.py" />

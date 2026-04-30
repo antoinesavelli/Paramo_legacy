@@ -42,7 +42,7 @@ def ensure_storage_layout(market_root: str = None, news_root: str = None, logger
 
     Expected structure:
     - <market_root>/ticker_data/YYYY/MM/YYYY-MM-DD.parquet (market data)
-    - T:/trading/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)
+    - S:/trading/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)   # line 45
     - <market_root>/news_data/ (news data)
     - <market_root>/market_context/ (SPY, VIX, RUT CSVs)
     """

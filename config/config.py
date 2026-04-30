@@ -205,7 +205,7 @@ class SystemConfig:
     CLEAR_CACHE_BETWEEN_DAYS: bool = True
     USE_FILE_INDEX_CACHE: bool = True  # Enable pre-built file index
 
-    REPORTS_DIR: str = r"T:\trading\reports"  # All backtest outputs go here
+    REPORTS_DIR: str = r"S:\trading\reports"  # All backtest outputs go here
 
 @dataclass(frozen=True)
 class MarketContextConfig:
@@ -214,7 +214,7 @@ class MarketContextConfig:
     VIX_SYMBOL: str = 'VIX'
     RUT_SYMBOL: str = 'RUT'
 
-    CSV_DIR: str = r'T:\trading\market_context'
+    CSV_DIR: str = r'S:\trading\market_context'  # line 217
 
     SMA_FAST: int = 5
     SMA_SLOW: int = 20
@@ -250,10 +250,10 @@ class BacktestConfig:
     INITIAL_CAPITAL: float = 1000.0
 
     # ✅ UPDATED: Simplified paths - daily_aggregates now at root level
-    BASE_DATA_DIR: str = r'T:\trading'
-    DATA_DIR: str = r'T:\trading\ticker_data'
-    NEWS_DATA_DIR: str = r'T:\trading\news_data'
-    DAILY_AGGREGATES_DIR: str = r'T:\trading\daily_aggregates'
+    BASE_DATA_DIR: str = r'S:\trading'                          # line 253
+    DATA_DIR: str = r'S:\trading\ticker_data'                   # line 254
+    NEWS_DATA_DIR: str = r'S:\trading\news_data'                # line 255
+    DAILY_AGGREGATES_DIR: str = r'S:\trading\daily_aggregates'  # line 256
 
     INTRADAY: bool = True
     INTRADAY_TIMEFRAME: str = '1Min'
