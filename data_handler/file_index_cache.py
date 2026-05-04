@@ -56,11 +56,11 @@ class FileIndexCache:
     def __init__(self, cache_dir: Optional[str] = None):
         """
         Args:
-            cache_dir: Directory to store cache files (default: T:\\trading\\ticker_data\\cached_dateranges)
+            cache_dir: Directory to store cache files (default: S:\\trading\\ticker_data\\cached_dateranges)
         """
         if cache_dir is None:
             # Default to trading/ticker_data/cached_dateranges
-            cache_dir = r"T:\trading\ticker_data\cached_dateranges"
+            cache_dir = r"S:\trading\ticker_data\cached_dateranges"
         
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -79,8 +79,8 @@ class FileIndexCache:
         Validation: Only checks if date range matches (simple and fast).
         
         Args:
-            data_dir: Intraday data directory (T:\\trading\\ticker_data)
-            aggregate_dir: Daily aggregates directory (T:\\trading\\ticker_data\\daily_aggregates)
+            data_dir: Intraday data directory (S:\\trading\\ticker_data)
+            aggregate_dir: Daily aggregates directory (S:\\trading\\ticker_data\\daily_aggregates)
             start_date: Start date 'YYYY-MM-DD'
             end_date: End date 'YYYY-MM-DD'
             force_rebuild: Force rebuild even if cache exists

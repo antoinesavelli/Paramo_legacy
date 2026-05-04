@@ -102,32 +102,30 @@ class PatternConfig:
     
     # Dynamic confluence thresholds based on gap size
     CONFLUENCE_EXTREME_GAP_THRESHOLD: float = 100.0
-    CONFLUENCE_EXTREME_GAP_MIN_SCORE: float = 5.0
-    
+    CONFLUENCE_EXTREME_GAP_MIN_SCORE: float = 15.0   # was 20.0
     CONFLUENCE_LARGE_GAP_THRESHOLD: float = 50.0
-    CONFLUENCE_LARGE_GAP_MIN_SCORE: float = 10.0
-    
-    CONFLUENCE_NORMAL_GAP_MIN_SCORE: float = 15.0
-    CONFLUENCE_MAX_SCORE: float = 25.0
-    CONFLUENCE_MIN_PATTERNS: int = 1
-    
-    # ✅ NEW: Extreme gap penalty thresholds
-    EXTREME_GAP_PENALTY_ENABLED: bool = False
-    EXTREME_GAP_3000_THRESHOLD: float = 3000.0  # 3000%+ gap
-    EXTREME_GAP_3000_PENALTY: float = 0.5        # 50% penalty (multiply by 0.5)
-    
-    EXTREME_GAP_2500_THRESHOLD: float = 2500.0  # 2500%+ gap
-    EXTREME_GAP_2500_PENALTY: float = 0.7        # 30% penalty (multiply by 0.7)
-    
-    EXTREME_GAP_2000_THRESHOLD: float = 2000.0  # 2000%+ gap
-    EXTREME_GAP_2000_PENALTY: float = 0.9        # 10% penalty (multiply by 0.9)
-    
+    CONFLUENCE_LARGE_GAP_MIN_SCORE: float = 25.0     # was 40.0
+    CONFLUENCE_NORMAL_GAP_MIN_SCORE: float = 40.0    # was 60.0 — 3 active components, not 5
+    CONFLUENCE_MAX_SCORE: float = 100.0
+
     # Pattern confluence weights (must sum to 1.0 for interpretability)
-    CONFLUENCE_WEIGHT_STEP_UP: float = 0.4
+    CONFLUENCE_WEIGHT_STEP_UP: float = 0.5
     CONFLUENCE_WEIGHT_PARABOLIC: float = 0.0
     CONFLUENCE_WEIGHT_BREAKOUT: float = 0.0
     CONFLUENCE_WEIGHT_VOLUME: float = 0.25
     CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE: float = 0.25
+
+    # Minimum number of patterns for confluence
+    CONFLUENCE_MIN_PATTERNS: int = 1
+
+    # Extreme gap score penalty (applied after normalization)
+    EXTREME_GAP_PENALTY_ENABLED: bool = False
+    EXTREME_GAP_2000_THRESHOLD: float = 2000.0
+    EXTREME_GAP_2000_PENALTY: float = 0.85
+    EXTREME_GAP_2500_THRESHOLD: float = 2500.0
+    EXTREME_GAP_2500_PENALTY: float = 0.75
+    EXTREME_GAP_3000_THRESHOLD: float = 3000.0
+    EXTREME_GAP_3000_PENALTY: float = 0.60
 
 @dataclass(frozen=True)
 class RiskConfig:

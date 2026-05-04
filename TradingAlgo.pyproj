@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>501e9449-2deb-40f7-ab18-abb8a953e303</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>scripts\pattern_optimization\analyze_optimization.py</StartupFile>
+    <StartupFile>run\main.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>

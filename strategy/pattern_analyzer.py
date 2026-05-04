@@ -400,7 +400,6 @@ class PatternAnalyzer:
         patterns_detected = []
         total_score = 0.0
         
-        # ✅ Load weights from config instead of hardcoding
         pc = self.config.pattern
         weights = {
             'step_up': pc.CONFLUENCE_WEIGHT_STEP_UP,
@@ -422,40 +421,33 @@ class PatternAnalyzer:
         total_score += volume.get('strength', 0) * weights['volume']
         total_score += sr.get('strength', 0) * weights['support_resistance']
         
-        # ✅ IMPROVED: Cap total confluence score at CONFLUENCE_MAX_SCORE
-        capped_score = min(pc.CONFLUENCE_MAX_SCORE, total_score)
+        # Normalize score to 0-100 based on active (non-zero) weights only
+        active_weight_sum = sum(w for w in weights.values() if w > 0)
+        normalized_score = (total_score / active_weight_sum) if active_weight_sum > 0 else 0.0
+        normalized_score = max(0.0, min(100.0, normalized_score))
         
-        # ✅ NEW: Apply extreme gap penalty if enabled
+        # Apply extreme gap penalty if enabled
         penalty_applied = 1.0
         if pc.EXTREME_GAP_PENALTY_ENABLED and gap_percent is not None:
             if gap_percent >= pc.EXTREME_GAP_3000_THRESHOLD:
                 penalty_applied = pc.EXTREME_GAP_3000_PENALTY
-                self.logger.debug(
-                    f"Extreme gap penalty applied: {gap_percent:.1f}% gap "
-                    f"→ {penalty_applied:.1%} multiplier (score reduced from "
-                    f"{capped_score:.2f} to {capped_score * penalty_applied:.2f})"
-                )
             elif gap_percent >= pc.EXTREME_GAP_2500_THRESHOLD:
                 penalty_applied = pc.EXTREME_GAP_2500_PENALTY
-                self.logger.debug(
-                    f"Large gap penalty applied: {gap_percent:.1f}% gap "
-                    f"→ {penalty_applied:.1%} multiplier (score reduced from "
-                    f"{capped_score:.2f} to {capped_score * penalty_applied:.2f})"
-                )
             elif gap_percent >= pc.EXTREME_GAP_2000_THRESHOLD:
                 penalty_applied = pc.EXTREME_GAP_2000_PENALTY
+            if penalty_applied < 1.0:
                 self.logger.debug(
-                    f"Moderate gap penalty applied: {gap_percent:.1f}% gap "
+                    f"Gap penalty applied: {gap_percent:.1f}% gap "
                     f"→ {penalty_applied:.1%} multiplier (score reduced from "
-                    f"{capped_score:.2f} to {capped_score * penalty_applied:.2f})"
+                    f"{normalized_score:.2f} to {normalized_score * penalty_applied:.2f})"
                 )
         
-        final_score = capped_score * penalty_applied
+        final_score = normalized_score * penalty_applied
         
         return {
             'patterns_detected': patterns_detected,
             'pattern_count': len(patterns_detected),
             'total_score': final_score,
-            'score_before_penalty': capped_score,  # ✅ NEW: Track pre-penalty score
-            'gap_penalty_applied': penalty_applied  # ✅ NEW: Track penalty multiplier
+            'score_before_penalty': normalized_score,
+            'gap_penalty_applied': penalty_applied
         }

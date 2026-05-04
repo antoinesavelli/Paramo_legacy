@@ -9,7 +9,7 @@ Handles:
 - Historical volume data
 - Efficient batch operations
 
-File structure: T:\\trading\\daily_aggregates\\YYYY\\YYYY-MM.parquet
+File structure: S:\\trading\\daily_aggregates\\YYYY\\YYYY-MM.parquet
 
 MEMORY OPTIMIZATION:
 - Only ONE month cached at a time (cache_limit=1)
@@ -40,7 +40,7 @@ class AggregateDataHandler:
         Initialize aggregate data handler.
         
         Args:
-            aggregate_dir: Base directory for aggregates (e.g., T:\\trading\\daily_aggregates)
+            aggregate_dir: Base directory for aggregates (e.g., S:\\trading\\daily_aggregates)
             cache_limit: Number of months to keep in cache (default: 1 for memory efficiency)
         """
         self.aggregate_dir = Path(aggregate_dir)

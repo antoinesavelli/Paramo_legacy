@@ -313,7 +313,6 @@ def main():
     # Run optimizations
     print(f"\n[3/5] Running {total_runs} backtests...")
     print("=" * 80)
-    
     results_summary = []
     successful_runs = 0
     failed_runs = 0

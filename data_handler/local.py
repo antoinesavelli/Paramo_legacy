@@ -46,7 +46,7 @@ class LocalDataHandler:
         
         Args:
             config: TradingConfig object
-            data_dir: Base directory for intraday data (T:\\trading\\ticker_data)
+            data_dir: Base directory for intraday data (S:\\trading\\ticker_data)
         """
         self.config = config
         self.data_dir = Path(data_dir)

@@ -1,6 +1,6 @@
 ﻿"""
 Build daily aggregate cache from intraday parquet files.
-Creates T:\\trading\\daily_aggregates\\YYYY\\YYYY-MM.parquet
+Creates S:\\trading\\daily_aggregates\\YYYY\\YYYY-MM.parquet
 
 Schema:
 - date, symbol, open, high, low, close, volume, bar_count
@@ -78,17 +78,17 @@ def load_fundamentals_for_date(fundamentals_dir: Path, date: datetime) -> pd.Dat
         return pd.DataFrame()
 
 def build_daily_aggregates(
-    data_dir: Path = Path(r"T:\trading\ticker_data"),
-    fundamentals_dir: Path = Path(r"T:\trading\fundamentals"),
-    output_dir: Path = Path(r"T:\trading\daily_aggregates")
+    data_dir: Path = Path(r"S:\trading\ticker_data"),
+    fundamentals_dir: Path = Path(r"S:\trading\fundamentals"),
+    output_dir: Path = Path(r"S:\trading\daily_aggregates")
 ):
     """
     Build daily aggregate cache from intraday files and fundamentals.
     
     File structure:
-        Input:  T:\\trading\\ticker_data\\YYYY\\MM\\YYYY-MM-DD.parquet (1-min bars, all symbols)
-                T:\\trading\\fundamentals\\YYYY\\MM\\YYYY-MM-DD.parquet (fundamental data)
-        Output: T:\\trading\\daily_aggregates\\YYYY\\YYYY-MM.parquet (daily stats, all symbols)
+        Input:  S:\\trading\\ticker_data\\YYYY\\MM\\YYYY-MM-DD.parquet (1-min bars, all symbols)
+                S:\\trading\\fundamentals\\YYYY\\MM\\YYYY-MM-DD.parquet (fundamental data)
+        Output: S:\\trading\\daily_aggregates\\YYYY\\YYYY-MM.parquet (daily stats, all symbols)
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
