@@ -31,7 +31,7 @@ from data_handler.aggregate_handler import AggregateDataHandler
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONFIG — edit these two toggles
 # ══════════════════════════════════════════════════════════════════════════════
-FILTER_MODE = 'gappers'   # 'all' | 'gappers'
+FILTER_MODE = 'all'   # 'all' | 'gappers'
 DATE_RANGE  = 'full'  # 'backtest' | 'full'
 # ══════════════════════════════════════════════════════════════════════════════
 

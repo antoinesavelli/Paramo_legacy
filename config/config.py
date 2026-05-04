@@ -263,7 +263,7 @@ class BacktestConfig:
     # ✅ SIMPLIFIED NEWS FILTERING
     IGNORE_CATALYST: bool = False           # Enable news filtering
     MAX_NEGATIVE_SENTIMENT: float = 0.08   # Max negative sentiment allowed (0-1 scale)
-    # REMOVED: MIN_NEWS_STRENGTH (no longer used)
+    MIN_POSITIVE_SENTIMENT: float = 0.0    # reject if max pos < this (0.0 = disabled)
 
     DATA_TZ: str = "US/Eastern"
     OPEN_WINDOW_MINUTES: int = 15
@@ -287,6 +287,8 @@ class BacktestConfig:
 @dataclass(frozen=True)
 class TradingConfig:
     """Central configuration for the trading system."""
+    RUN_MODE: str = 'backtest'   # 'backtest' | 'live'
+
     api: APIConfig = field(default_factory=APIConfig)
     screening: ScreeningConfig = field(default_factory=ScreeningConfig)
     gap_monitoring: GapMonitoringConfig = field(default_factory=GapMonitoringConfig)

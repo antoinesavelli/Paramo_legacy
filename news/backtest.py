@@ -169,42 +169,47 @@ class NewsIntegrationBacktest:
 
         article_count = len(sym_df)
 
-        # ── Sentiment gate ───────────────────────────────────────────────────
+        # ── Negative sentiment gate ──────────────────────────────────────────
         neg_col = 'negative' if 'negative' in sym_df.columns else 'neg'
         max_negative = 0.0
         if neg_col in sym_df.columns:
             max_negative = float(sym_df[neg_col].max())
 
-        threshold = getattr(self.config.backtest, 'MAX_NEGATIVE_SENTIMENT', 0.08)
-        if max_negative > threshold:
+        if max_negative > getattr(self.config.backtest, 'MAX_NEGATIVE_SENTIMENT', 0.08):
             return {
                 'approved': False,
                 'reason': 'negative_sentiment',
                 'earliest_news_time': None,
-                'article_count': article_count,
                 'max_negative': max_negative,
-                'articles_before_time': 0
             }
+
+        # ── Positive sentiment gate ──────────────────────────────────────────
+        pos_col = 'positive' if 'positive' in sym_df.columns else 'pos'
+        min_positive = getattr(self.config.backtest, 'MIN_POSITIVE_SENTIMENT', 0.0)
+        if min_positive > 0.0 and pos_col in sym_df.columns:
+            max_positive = float(sym_df[pos_col].max())
+            if max_positive < min_positive:
+                return {
+                    'approved': False,
+                    'reason': 'insufficient_positive_sentiment',
+                    'earliest_news_time': None,
+                    'max_negative': max_negative,
+                }
 
         # ── Timing gate ──────────────────────────────────────────────────────
         earliest_news_time = sym_df[date_col].min()
-        articles_before_time = int((sym_df[date_col] <= current_time).sum())
 
         if current_time < earliest_news_time:
             return {
                 'approved': False,
                 'reason': 'news_not_yet_published',
                 'earliest_news_time': earliest_news_time,
-                'article_count': article_count,
                 'max_negative': max_negative,
-                'articles_before_time': articles_before_time
             }
 
         return {
             'approved': True,
             'reason': 'approved',
             'earliest_news_time': earliest_news_time,
-            'article_count': article_count,
             'max_negative': max_negative,
-            'articles_before_time': articles_before_time
         }

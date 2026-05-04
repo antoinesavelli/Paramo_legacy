@@ -731,18 +731,19 @@ class UnifiedScreener:
                 gap_percent=gap_pct,
                 relative_volume=rel_vol,
                 reason=f"news_{reason}",
-                article_count=news.get('article_count', 0),
                 max_negative=news.get('max_negative', 0.0),
                 earliest_news_time=news.get('earliest_news_time'),
-                articles_before_time=news.get('articles_before_time', 0)
             ))
             stats["reject_reasons"][f"news_{reason}"] += 1
-            
-            # Enhanced logging
-            if reason == 'excessive_negative_sentiment':
+
+            if reason == 'negative_sentiment':
                 self.logger.debug(
-                    f"[REJECT] {symbol} - Excessive negative sentiment: "
-                    f"{news.get('max_negative', 0):.3f} > 0.08"
+                    f"[REJECT] {symbol} - Negative sentiment: "
+                    f"{news.get('max_negative', 0):.3f} > {getattr(self.config.backtest, 'MAX_NEGATIVE_SENTIMENT', 0.08)}"
+                )
+            elif reason == 'insufficient_positive_sentiment':
+                self.logger.debug(
+                    f"[REJECT] {symbol} - Insufficient positive sentiment"
                 )
             elif reason == 'news_not_yet_published':
                 earliest = news.get('earliest_news_time')
@@ -756,25 +757,23 @@ class UnifiedScreener:
                     )
             else:
                 self.logger.debug(f"[REJECT] {symbol} - {reason}")
-            
+
             return False
-        
-        # ✅ PASSED: Sentiment OK and news already published
-        article_count = news.get('article_count', 0)
+
+        # PASSED: sentiment gates cleared and news already published
         max_neg = news.get('max_negative', 0.0)
         earliest = news.get('earliest_news_time')
-        
+
         if earliest:
             earliest_et = earliest.tz_convert('US/Eastern')
             entry_et = entry_time.tz_convert('US/Eastern')
-            time_diff = (entry_time - earliest).total_seconds() / 60  # minutes
-            
+            time_diff = (entry_time - earliest).total_seconds() / 60
+
             self.logger.info(
-                f"[NEWS] {symbol} - PASS: {article_count} articles, "
+                f"[NEWS] {symbol} - PASS: "
                 f"max_neg={max_neg:.3f}, "
                 f"earliest={earliest_et.strftime('%H:%M')} ET, "
                 f"entry={entry_et.strftime('%H:%M')} ET "
                 f"({time_diff:.0f}min after news)"
             )
-        
         return True

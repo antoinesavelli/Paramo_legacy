@@ -1,11 +1,9 @@
-﻿# =====================================================
-# PARAMO:    PARABOLIC MOMENTUM TRADING ALGORITHM
-# Alpaca API Integration for Extreme Gap Trading
+# =====================================================
+# core.trading_system.py - Live Trading System Orchestrator
 # =====================================================
 
 from config.config import TradingConfig
 from data_handler.api import APIDataHandler
-from data_handler.local import LocalDataHandler
 from screener.live import LiveScreener
 from strategy.pattern_analyzer import PatternAnalyzer
 from strategy.risk_manager import RiskManager
@@ -14,8 +12,8 @@ from core.monitor import Monitor
 from market_context.live import MarketContext
 from utils.reporting import compute_statistics, generate_text_report
 import alpaca_trade_api as tradeapi
-from datetime import datetime, timedelta
-from typing import Dict, Optional
+from datetime import datetime, timezone
+from typing import Optional
 import logging
 import signal
 import sys
@@ -24,41 +22,27 @@ import time
 import os
 from utils.logging import setup_logging
 from news.live import NewsIntegrationLive
-from news.backtest import NewsIntegrationBacktest
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-import functools
 import time as _time
 
 
 def _ensure_dir(path: str):
-    """Create directory if it does not exist."""
     os.makedirs(path, exist_ok=True)
 
 
 def ensure_storage_layout(market_root: str = None, news_root: str = None, logger: logging.Logger = None):
-    """
-    Ensure required directory structure exists.
-
-    Expected structure:
-    - <market_root>/ticker_data/YYYY/MM/YYYY-MM-DD.parquet (market data)
-    - S:/trading/daily_aggregates/YYYY/YYYYMM.parquet (aggregates)   # line 45
-    - <market_root>/news_data/ (news data)
-    - <market_root>/market_context/ (SPY, VIX, RUT CSVs)
-    """
     logger = logger or logging.getLogger(__name__)
-
     if market_root:
         _ensure_dir(market_root)
         logger.info(f"Storage ready for market data at: {market_root}")
-
     if news_root:
         _ensure_dir(news_root)
         logger.info(f"Storage ready for news at: {news_root}")
 
 
 class TradingSystem:
-    """Main trading system orchestrator"""
+    """Live trading system orchestrator."""
 
     def __init__(self, config: TradingConfig | None = None):
         self.config = config or TradingConfig()
@@ -73,30 +57,20 @@ class TradingSystem:
         )
 
         self.data_handler = APIDataHandler(self.config)
-
-        # ✅ FIX 1: pattern_analyzer must be created before LiveScreener so it can be passed in
         self.pattern_analyzer = PatternAnalyzer(self.config, self.data_handler)
-
-        # ✅ FIX 1: Pass pattern_analyzer as required third argument
         self.screener = LiveScreener(self.config, self.data_handler, self.pattern_analyzer)
-
         self.risk_manager = RiskManager(self.config, self.api)
-
         self.market_context = MarketContext(self.config, self.api)
-
         self.trade_executor = TradeExecutor(
-            self.config,
-            self.api,
-            self.risk_manager,
+            self.config, self.api, self.risk_manager,
             market_context=self.market_context
         )
-
         self.monitor = Monitor(self.config)
         self.news_integration = NewsIntegrationLive(self.config)
         self.running = False
         self.last_scan_time = None
         self.heartbeat_path = "runtime_heartbeat.txt"
-        self.last_heartbeat = datetime.utcnow()
+        self.last_heartbeat = datetime.now(timezone.utc)
         self.watchdog_interval = 120
         self.max_scan_seconds = 45
         self.executor = ThreadPoolExecutor(max_workers=8)
@@ -107,7 +81,7 @@ class TradingSystem:
         self.logger.info("Trading system initialized")
 
     def _update_heartbeat(self):
-        self.last_heartbeat = datetime.utcnow()
+        self.last_heartbeat = datetime.now(timezone.utc)
         try:
             with open(self.heartbeat_path, "w", encoding="utf-8") as f:
                 f.write(self.last_heartbeat.isoformat())
@@ -117,7 +91,7 @@ class TradingSystem:
     def _watchdog_loop(self):
         while True:
             _time.sleep(self.watchdog_interval)
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             delta = (now - self.last_heartbeat).total_seconds()
             if delta > self.watchdog_interval * 3:
                 self.logger.critical(
@@ -161,8 +135,6 @@ class TradingSystem:
         self.logger.info("Running market open tasks...")
         try:
             self.market_context.update_market_context()
-
-            # ✅ FIX 4: Log full market context state so gate decisions are visible in logs
             indicators = self.market_context.market_indicators
             score = indicators.get('market_score', 'N/A')
             env = indicators.get('trading_environment', 'N/A')
@@ -170,24 +142,14 @@ class TradingSystem:
             spy = indicators.get('spy_trend', {})
             rut = indicators.get('rut_trend', {})
             self.logger.info(
-                f"Market context update complete | "
-                f"Score: {score} | Environment: {env} | "
+                f"Market context update complete | Score: {score} | Environment: {env} | "
                 f"VIX: {vix.get('level', 'N/A')} ({vix.get('classification', 'N/A')}) | "
-                f"SPY trend: {spy.get('trend', 'N/A')} | "
-                f"RUT trend: {rut.get('trend', 'N/A')}"
+                f"SPY trend: {spy.get('trend', 'N/A')} | RUT trend: {rut.get('trend', 'N/A')}"
             )
-
             if not self.market_context.should_trade():
-                self.logger.warning(
-                    f"Trading DISABLED for today | "
-                    f"Score: {score} (threshold: {self.config.market_context.SHOULD_TRADE_MIN_SCORE_IF_UNFAVORABLE}) | "
-                    f"Environment: {env} | "
-                    f"VIX classification: {vix.get('classification', 'N/A')} | "
-                    f"BLOCK_ON_VIX_EXTREME={self.config.market_context.BLOCK_ON_VIX_EXTREME}"
-                )
+                self.logger.warning(f"Trading DISABLED for today | Score: {score} | Environment: {env}")
                 self.running = False
                 return
-
             self.logger.info("Market conditions acceptable - trading ENABLED")
             self.running = True
         except Exception as e:
@@ -225,13 +187,12 @@ class TradingSystem:
 
     def _run_trading_cycle(self):
         try:
-            # ✅ FIX 2: Call the correct method name run_screen() instead of screen()
             candidates = self.screener.run_screen()
             for candidate in candidates:
                 if candidate['symbol'] not in self.trade_executor.active_trades:
                     self.trade_executor.execute_entry(candidate)
             self.trade_executor.update_active_positions()
-            self.last_scan_time = datetime.now()
+            self.last_scan_time = datetime.now(timezone.utc)
         except Exception as e:
             self.logger.error(f"Error in trading cycle: {e}")
 
@@ -259,9 +220,3 @@ class TradingSystem:
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
         self.logger.info("Shutdown complete")
-
-
-if __name__ == "__main__":
-    config = TradingConfig()
-    system = TradingSystem(config)
-    system.start()
