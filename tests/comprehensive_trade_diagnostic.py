@@ -285,8 +285,28 @@ class ComprehensiveTradeDiagnostic:
         filter_results['after_volume'] = len(after_volume)
         self.logger.info(f"  • [F3] Daily Volume >= {min_daily_vol:,} (enabled={cfg_screening.ENABLE_DAILY_VOLUME_PRESCREEN}): {filter_results['after_price_range']} → {filter_results['after_volume']}")
 
-        # Filter 4: Float & Marketcap
-        after_fundamentals = after_volume.copy()
+        # Filter 4: Relative Volume (matches production gate order)
+        after_rvol = after_volume.copy()
+        if cfg_screening.ENABLE_RELATIVE_VOLUME:
+            min_rvol = cfg_screening.MIN_RELATIVE_VOLUME
+            try:
+                symbols = after_volume['symbol'].tolist()
+                rel_vols = self._rvol_calculator.calculate_batch(symbols, day)
+                if rel_vols:
+                    after_rvol = after_volume.copy()
+                    after_rvol['relative_volume'] = after_rvol['symbol'].map(rel_vols).fillna(0.0)
+                    after_rvol = after_rvol[after_rvol['relative_volume'] >= min_rvol]
+                else:
+                    self.logger.warning("  • [F4] RVOL enabled but calculator returned no data — filter skipped")
+            except Exception as e:
+                self.logger.warning(f"  • [F4] RVOL calculation error: {e} — filter skipped")
+            self.logger.info(f"  • [F4] Relative Volume >= {min_rvol}x: {filter_results['after_volume']} → {len(after_rvol)}")
+        else:
+            self.logger.info("  • [F4] Relative Volume (disabled)")
+        filter_results['after_rvol'] = len(after_rvol)
+
+        # Filter 5: Float & Marketcap
+        after_fundamentals = after_rvol.copy()
         if cfg_screening.ENABLE_FLOAT_FILTER or cfg_screening.ENABLE_MARKETCAP_FILTER:
             try:
                 day_agg = self._agg_handler.get_day_aggregates(day)
@@ -297,38 +317,21 @@ class ComprehensiveTradeDiagnostic:
                         if symbol not in agg_lookup.index:
                             return True
                         row = agg_lookup.loc[symbol]
-                        if cfg_screening.ENABLE_FLOAT_FILTER and 'float_shares' in row:
-                            f = row['float_shares']
+                        if cfg_screening.ENABLE_FLOAT_FILTER and 'float' in row:
+                            f = row['float']
                             if pd.notna(f) and (f < cfg_screening.MIN_FLOAT or f > cfg_screening.MAX_FLOAT):
                                 return False
-                        if cfg_screening.ENABLE_MARKETCAP_FILTER and 'market_cap' in row:
-                            mc = row['market_cap']
+                        if cfg_screening.ENABLE_MARKETCAP_FILTER and 'marketcap' in row:
+                            mc = row['marketcap']
                             if pd.notna(mc) and mc > cfg_screening.MAX_MARKETCAP:
                                 return False
                         return True
 
-                    after_fundamentals = after_volume[after_volume['symbol'].apply(passes_fundamentals)]
+                    after_fundamentals = after_rvol[after_rvol['symbol'].apply(passes_fundamentals)]
             except Exception as e:
                 self.logger.warning(f"  • Fundamental filter error: {e} — skipping")
         filter_results['after_float_marketcap'] = len(after_fundamentals)
-        self.logger.info(f"  • [F4] Float/Marketcap (enabled={cfg_screening.ENABLE_FLOAT_FILTER or cfg_screening.ENABLE_MARKETCAP_FILTER}): {filter_results['after_volume']} → {filter_results['after_float_marketcap']}")
-
-        # Filter 5: Relative Volume
-        after_rvol = after_fundamentals.copy()
-        if cfg_screening.ENABLE_RELATIVE_VOLUME:
-            min_rvol = cfg_screening.MIN_RELATIVE_VOLUME
-            try:
-                rvol_df = self._rvol_calculator.calculate(after_rvol, day)
-                if rvol_df is not None and not rvol_df.empty and 'relative_volume' in rvol_df.columns:
-                    after_rvol = rvol_df[rvol_df['relative_volume'] >= min_rvol]
-                else:
-                    self.logger.warning("  • [F5] RVOL enabled but calculator returned no data — filter skipped")
-            except Exception as e:
-                self.logger.warning(f"  • [F5] RVOL calculation error: {e} — filter skipped")
-            self.logger.info(f"  • [F5] Relative Volume >= {min_rvol}x: {filter_results['after_float_marketcap']} → {len(after_rvol)}")
-        else:
-            self.logger.info("  • [F5] Relative Volume (disabled)")
-        filter_results['after_rvol'] = len(after_rvol)
+        self.logger.info(f"  • [F5] Float/Marketcap (enabled={cfg_screening.ENABLE_FLOAT_FILTER or cfg_screening.ENABLE_MARKETCAP_FILTER}): {filter_results['after_rvol']} → {filter_results['after_float_marketcap']}")
 
         # Filter 6: Market Context gate
         if self.market_context is not None:
@@ -346,7 +349,7 @@ class ComprehensiveTradeDiagnostic:
         else:
             self.logger.info("  • [F6] Market Context (not available — skipped)")
 
-        passed_stocks = after_rvol.to_dict('records')
+        passed_stocks = after_fundamentals.to_dict('records')
         if passed_stocks:
             top2 = sorted(passed_stocks, key=lambda x: x['gap_percent'], reverse=True)[:2]
             self.logger.info(f"  • {len(passed_stocks)} passed. Top 2: " +
@@ -373,7 +376,10 @@ class ComprehensiveTradeDiagnostic:
             warmup = session_cfg.REGULAR_WARMUP_MINUTES
             min_bars = session_cfg.REGULAR_MIN_BARS
 
-        session_end_et = pd.Timestamp(day.replace(hour=20, minute=0), tz='US/Eastern')
+        after_hours_end = datetime.strptime(session_cfg.AFTER_HOURS_END_ET, "%H:%M").time()
+        session_end_et = pd.Timestamp(
+            day.replace(hour=after_hours_end.hour, minute=after_hours_end.minute), tz='US/Eastern'
+        )
         session_start_utc = session_start_et.tz_convert('UTC')
         session_end_utc = session_end_et.tz_convert('UTC')
 
@@ -417,37 +423,51 @@ class ComprehensiveTradeDiagnostic:
                 failed_warmup.append({'symbol': symbol, 'reason': 'insufficient_warmup_bars', 'bar_count': bar_count, 'warmup_required': warmup, 'gap_percent': stock['gap_percent']})
                 continue
 
-            bars_warm = bars.iloc[:warmup]
-            if bars_warm.isna().any().any():
-                failed_warmup.append({'symbol': symbol, 'reason': 'nan_in_warmup_bars', 'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
+            # NaN check before next-bar check — matches production gate order
+            if bars.iloc[:warmup].isna().any().any():
+                failed_warmup.append({'symbol': symbol, 'reason': 'nan_in_warmup_bars',
+                                      'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
                 continue
 
-            entry_price = float(bars.iloc[warmup - 1]['close'])
+            if bar_count <= warmup:
+                failed_warmup.append({
+                    'symbol': symbol, 'reason': 'no_next_bar_for_entry',
+                    'bar_count': bar_count, 'warmup_required': warmup,
+                    'gap_percent': stock['gap_percent']
+                })
+                continue
+
+            bars_warm   = bars.iloc[:warmup]
+            signal_bar  = bars.iloc[warmup - 1]   # last bar pattern runs on
+            next_bar    = bars.iloc[warmup]        # first bar available for fill
+
+            entry_price = float(next_bar['open'])          # ← fixed: was signal_bar['close']
+            entry_ts_raw = next_bar.get('timestamp', None) # ← fixed: timestamp of fill bar
+
             if entry_price < self.config.screening.MIN_PRICE:
-                failed_warmup.append({'symbol': symbol, 'reason': 'entry_price_below_min', 'entry_price': entry_price, 'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
+                failed_warmup.append({'symbol': symbol, 'reason': 'entry_price_below_min',
+                                      'entry_price': entry_price, 'bar_count': bar_count,
+                                      'gap_percent': stock['gap_percent']})
                 continue
 
-            # Analysis window gate on entry timestamp
+            # Analysis window check still uses fill bar's timestamp
             if analysis_window_start_utc is not None:
-                entry_ts_raw = bars.iloc[warmup - 1].get('timestamp', None)
                 if entry_ts_raw is not None:
                     entry_ts = pd.Timestamp(entry_ts_raw)
-                    if entry_ts.tz is None:
-                        entry_ts = entry_ts.tz_localize('UTC')
-                    else:
-                        entry_ts = entry_ts.tz_convert('UTC')
+                    entry_ts = entry_ts.tz_localize('UTC') if entry_ts.tz is None else entry_ts.tz_convert('UTC')
                     if entry_ts < analysis_window_start_utc or entry_ts >= analysis_window_end_utc:
-                        failed_warmup.append({'symbol': symbol, 'reason': 'outside_analysis_window', 'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
+                        failed_warmup.append({'symbol': symbol, 'reason': 'outside_analysis_window',
+                                              'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
                         continue
 
             stock = stock.copy()
-            stock['bar_count'] = bar_count
-            stock['bars'] = bars
-            stock['bars_warm'] = bars_warm.copy()
-            stock['warmup'] = warmup
-            stock['entry_price'] = entry_price
-            entry_ts_raw = bars.iloc[warmup - 1].get('timestamp', None)
-            stock['entry_ts'] = pd.Timestamp(entry_ts_raw) if entry_ts_raw is not None else None
+            stock['bar_count']        = bar_count
+            stock['bars']             = bars
+            stock['bars_warm']        = bars_warm.copy()
+            stock['warmup']           = warmup
+            stock['entry_price']      = entry_price                        # next_bar open
+            stock['signal_bar_close'] = float(signal_bar['close'])         # audit: old behaviour
+            stock['entry_ts']         = pd.Timestamp(entry_ts_raw) if entry_ts_raw is not None else None
             passed_warmup.append(stock)
 
         fail_summary = Counter(f['reason'] for f in failed_warmup)
@@ -523,7 +543,7 @@ class ComprehensiveTradeDiagnostic:
         return {'valid_patterns': valid_patterns, 'failed_patterns': failed_patterns, 'failure_reasons': failure_reasons}
 
     def _analyze_risk_checks(self, day: datetime, valid_patterns: List[Dict]) -> Dict:
-        """Risk checks — mirrors backtest position sizing limits."""
+        """Risk checks — mirrors backtest position sizing limits with per-reason codes."""
         tradeable = []
         rejected = []
         rejection_reasons = Counter()
@@ -536,13 +556,15 @@ class ComprehensiveTradeDiagnostic:
         backtest_cfg = self.config.backtest
         max_candidates = backtest_cfg.MAX_CANDIDATES_PER_DAY
 
+        # ── Cap by MAX_CANDIDATES_PER_DAY (pre-sort by pattern strength) ────────
         sorted_patterns = sorted(valid_patterns, key=lambda x: x.get('pattern_strength', 0) or 0, reverse=True)
         capped_out = sorted_patterns[max_candidates:]
         after_cap = sorted_patterns[:max_candidates]
         if capped_out:
             rejection_reasons['exceeded_max_candidates_per_day'] += len(capped_out)
-            rejected.extend([{**p, 'reason': 'exceeded_max_candidates_per_day'} for p in capped_out])
+            rejected.extend([{**p, 'risk_rejected_reason': 'exceeded_max_candidates_per_day'} for p in capped_out])
 
+        # ── Entry cutoff timestamp ───────────────────────────────────────────────
         session_cfg = self.config.session
         if session_cfg.PREMARKET_ENABLED:
             pm_start = datetime.strptime(session_cfg.PREMARKET_START_ET, "%H:%M").time()
@@ -552,14 +574,29 @@ class ComprehensiveTradeDiagnostic:
         else:
             session_start_et = pd.Timestamp(day.replace(hour=9, minute=30), tz='US/Eastern')
         session_start_utc = session_start_et.tz_convert('UTC')
-        cutoff_utc = session_start_utc + pd.Timedelta(minutes=backtest_cfg.ENTRY_CUTOFF_MINUTES)
+        # ── Entry cutoff: sourced from ANALYSIS_WINDOW_END_ET (single source of truth) ──
+        w_end_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_END_ET', '16:00')
+        we = datetime.strptime(w_end_str, "%H:%M").time()
+        cutoff_utc = pd.Timestamp(
+            day.replace(hour=we.hour, minute=we.minute), tz='US/Eastern'
+        ).tz_convert('UTC')
+
+        # ── Position sizing floor: can we afford even 1 share? ──────────────────
+        initial_capital = backtest_cfg.INITIAL_CAPITAL
+        max_pos_value = initial_capital * (risk_cfg.MAX_POSITION_SIZE_PERCENT / 100.0)
+        risk_per_trade = initial_capital * (risk_cfg.STOP_LOSS_PERCENT_OF_ACCOUNT / 100.0)
+
+        # ── Simulate daily-loss accumulator ─────────────────────────────────────
+        daily_loss_limit = initial_capital * (risk_cfg.MAX_DAILY_LOSS_PERCENT / 100.0)
+        simulated_daily_loss = 0.0   # conservative: assume no prior losses today
+
+        concurrent_count = 0
 
         for pattern in after_cap:
-            if len(tradeable) >= risk_cfg.MAX_CONCURRENT_POSITIONS:
-                rejection_reasons['max_concurrent_positions'] += 1
-                rejected.append({**pattern, 'reason': 'max_concurrent_positions'})
-                continue
+            symbol = pattern['symbol']
+            entry_price = pattern.get('entry_price', 0) or 0
 
+            # ── Check 1: entry cutoff ────────────────────────────────────────────
             entry_ts = pattern.get('entry_ts')
             if entry_ts is not None:
                 ts = pd.Timestamp(entry_ts)
@@ -568,11 +605,98 @@ class ComprehensiveTradeDiagnostic:
                 else:
                     ts = ts.tz_convert('UTC')
                 if ts >= cutoff_utc:
-                    rejection_reasons['past_entry_cutoff'] += 1
-                    rejected.append({**pattern, 'reason': 'past_entry_cutoff'})
+                    reason = 'past_entry_cutoff'
+                    rejection_reasons[reason] += 1
+                    rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                     'risk_detail': f"entry_ts={ts.tz_convert('US/Eastern').strftime('%H:%M')} >= cutoff={cutoff_utc.tz_convert('US/Eastern').strftime('%H:%M')}"})
                     continue
 
-            tradeable.append(pattern)
+            # ── Check 2: max concurrent positions ───────────────────────────────
+            if concurrent_count >= risk_cfg.MAX_CONCURRENT_POSITIONS:
+                reason = 'max_concurrent_positions'
+                rejection_reasons[reason] += 1
+                rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                 'risk_detail': f"concurrent={concurrent_count} >= max={risk_cfg.MAX_CONCURRENT_POSITIONS}"})
+                continue
+
+            # ── Check 3: entry price is zero / unknown ───────────────────────────
+            if entry_price <= 0:
+                reason = 'entry_price_unknown'
+                rejection_reasons[reason] += 1
+                rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                 'risk_detail': f"entry_price={entry_price}"})
+                continue
+
+            # ── Check 4: position sizing floor: can risk_per_trade afford ≥1 share? ──
+            # stop_distance = entry * stop_loss_pct_of_account / 100 is a proxy;
+            # real sizing = risk_per_trade / stop_distance_per_share
+            # We use ATR stop if enabled, else fall back to a 2% stop proxy.
+            if risk_cfg.ATR_TRAILING_ENABLED:
+                # ATR stop distance is (ATR * multiplier). Without live ATR we can't
+                # compute exactly, but we can flag when entry_price alone makes
+                # even a 1% stop un-fundable.
+                proxy_stop_pct = max(0.01, risk_cfg.ATR_TRAILING_MULTIPLIER * 0.01)
+            else:
+                proxy_stop_pct = 0.02   # 2% hard-stop fallback
+            stop_distance_per_share = entry_price * proxy_stop_pct
+            if stop_distance_per_share <= 0:
+                reason = 'position_sizing_zero_stop'
+                rejection_reasons[reason] += 1
+                rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                 'risk_detail': f"stop_distance_per_share={stop_distance_per_share:.4f}"})
+                continue
+
+            shares = int(risk_per_trade / stop_distance_per_share)
+            position_value = shares * entry_price
+            if shares < 1:
+                reason = 'position_sizing_too_small'
+                rejection_reasons[reason] += 1
+                rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                 'risk_detail': f"capital={initial_capital:.0f} risk_per_trade={risk_per_trade:.2f} "
+                                                f"stop_dist={stop_distance_per_share:.4f} → shares={shares}"})
+                continue
+
+            if position_value > max_pos_value:
+                # Clip shares to max position size rather than reject
+                shares = int(max_pos_value / entry_price)
+                position_value = shares * entry_price
+                if shares < 1:
+                    reason = 'position_sizing_exceeds_max_capped_to_zero'
+                    rejection_reasons[reason] += 1
+                    rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                     'risk_detail': f"max_pos_value={max_pos_value:.2f} entry={entry_price:.2f} → 0 shares"})
+                    continue
+
+            # ── Check 5: ATR trailing stop feasibility ───────────────────────────
+            # Flag if ATR trailing is enabled but pattern has no ATR data attached
+            if risk_cfg.ATR_TRAILING_ENABLED:
+                bars = pattern.get('bars')
+                if bars is not None and not bars.empty:
+                    period = risk_cfg.ATR_TRAILING_PERIOD
+                    if len(bars) < period:
+                        reason = 'atr_insufficient_bars'
+                        rejection_reasons[reason] += 1
+                        rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                         'risk_detail': f"bars={len(bars)} < atr_period={period}"})
+                        continue
+
+            # ── Check 6: daily loss limit (simulated) ────────────────────────────
+            worst_case_loss = risk_per_trade   # 1 full stop-out
+            if simulated_daily_loss + worst_case_loss > daily_loss_limit:
+                reason = 'daily_loss_limit_projected'
+                rejection_reasons[reason] += 1
+                rejected.append({**pattern, 'risk_rejected_reason': reason,
+                                 'risk_detail': f"projected_loss={simulated_daily_loss + worst_case_loss:.2f} "
+                                                f"> limit={daily_loss_limit:.2f}"})
+                continue
+
+            # ── Passed all risk checks ───────────────────────────────────────────
+            concurrent_count += 1
+            simulated_daily_loss += worst_case_loss   # pessimistic: treat each trade as a stop-out
+            tradeable.append({**pattern,
+                               'risk_shares': shares,
+                               'risk_position_value': round(position_value, 2),
+                               'risk_stop_distance': round(stop_distance_per_share, 4)})
 
         self.logger.info(f"  • Risk: {len(tradeable)} tradeable | {len(rejected)} rejected — {dict(rejection_reasons)}")
         return {'tradeable': tradeable, 'rejected': rejected, 'rejection_reasons': rejection_reasons}
@@ -580,39 +704,64 @@ class ComprehensiveTradeDiagnostic:
     def _capture_config_snapshot(self):
         cfg = self.config
         self.results['config_snapshot'] = {
-            'screening_min_gap_percent': cfg.screening.MIN_GAP_PERCENT,
-            'screening_min_price': cfg.screening.MIN_PRICE,
-            'screening_min_cumulative_volume': cfg.screening.MIN_CUMULATIVE_VOLUME,
-            'screening_min_daily_volume': cfg.screening.MIN_DAILY_VOLUME,
+            # Screening
+            'screening_min_gap_percent':               cfg.screening.MIN_GAP_PERCENT,
+            'screening_min_price':                     cfg.screening.MIN_PRICE,
+            'screening_min_absolute_volume':           cfg.screening.MIN_ABSOLUTE_VOLUME,
+            'screening_min_daily_volume':              cfg.screening.MIN_DAILY_VOLUME,
+            'screening_min_cumulative_volume':         cfg.screening.MIN_CUMULATIVE_VOLUME,
             'screening_enable_daily_volume_prescreen': cfg.screening.ENABLE_DAILY_VOLUME_PRESCREEN,
-            'screening_min_relative_volume': cfg.screening.MIN_RELATIVE_VOLUME,
-            'screening_enable_relative_volume': cfg.screening.ENABLE_RELATIVE_VOLUME,
-            'screening_cumulative_volume_enabled': cfg.screening.CUMULATIVE_VOLUME,
-            'session_premarket_enabled': cfg.session.PREMARKET_ENABLED,
-            'session_premarket_warmup_minutes': cfg.session.PREMARKET_WARMUP_MINUTES,
-            'session_premarket_min_bars': cfg.session.PREMARKET_MIN_BARS,
-            'session_regular_warmup_minutes': cfg.session.REGULAR_WARMUP_MINUTES,
-            'session_regular_min_bars': cfg.session.REGULAR_MIN_BARS,
-            'pattern_min_step_ups': cfg.pattern.MIN_STEP_UPS,
-            'pattern_min_advance_retention': cfg.pattern.MIN_ADVANCE_RETENTION,
-            'pattern_max_pullback_percent': cfg.pattern.MAX_PULLBACK_PERCENT,
-            'pattern_confluence_min_score': getattr(cfg.pattern, 'CONFLUENCE_NORMAL_GAP_MIN_SCORE', None),
-            'pattern_confluence_min_patterns': getattr(cfg.pattern, 'CONFLUENCE_MIN_PATTERNS', None),
-            'risk_stop_loss_percent_of_account': cfg.risk.STOP_LOSS_PERCENT_OF_ACCOUNT,
-            'risk_max_hold_time_minutes': cfg.risk.MAX_HOLD_TIME_MINUTES,
-            'risk_max_position_size_percent': cfg.risk.MAX_POSITION_SIZE_PERCENT,
-            'risk_max_daily_loss_percent': cfg.risk.MAX_DAILY_LOSS_PERCENT,
-            'risk_max_concurrent_positions': cfg.risk.MAX_CONCURRENT_POSITIONS,
-            'risk_atr_trailing_enabled': cfg.risk.ATR_TRAILING_ENABLED,
-            'risk_atr_trailing_multiplier': cfg.risk.ATR_TRAILING_MULTIPLIER,
-            'backtest_start_date': cfg.backtest.START_DATE,
-            'backtest_end_date': cfg.backtest.END_DATE,
-            'backtest_initial_capital': cfg.backtest.INITIAL_CAPITAL,
-            'backtest_base_data_dir': cfg.backtest.BASE_DATA_DIR,
-            'backtest_data_dir': cfg.backtest.DATA_DIR,
-            'backtest_entry_cutoff_minutes': cfg.backtest.ENTRY_CUTOFF_MINUTES,
-            'backtest_max_candidates_per_day': cfg.backtest.MAX_CANDIDATES_PER_DAY,
-            'backtest_analysis_window_enabled': getattr(cfg.backtest, 'ANALYSIS_WINDOW_ENABLED', False),
+            'screening_min_relative_volume':           cfg.screening.MIN_RELATIVE_VOLUME,
+            'screening_enable_relative_volume':        cfg.screening.ENABLE_RELATIVE_VOLUME,
+            'screening_cumulative_volume_enabled':     cfg.screening.CUMULATIVE_VOLUME,
+            # Session
+            'session_premarket_enabled':               cfg.session.PREMARKET_ENABLED,
+            'session_premarket_start_et':              cfg.session.PREMARKET_START_ET,
+            'session_premarket_end_et':                cfg.session.PREMARKET_END_ET,
+            'session_premarket_warmup_minutes':        cfg.session.PREMARKET_WARMUP_MINUTES,
+            'session_premarket_min_bars':              cfg.session.PREMARKET_MIN_BARS,
+            'session_regular_start_et':                cfg.session.REGULAR_START_ET,
+            'session_regular_end_et':                  cfg.session.REGULAR_END_ET,
+            'session_regular_warmup_minutes':          cfg.session.REGULAR_WARMUP_MINUTES,
+            'session_regular_min_bars':                cfg.session.REGULAR_MIN_BARS,
+            'session_after_hours_end_et':              cfg.session.AFTER_HOURS_END_ET,
+            # Pattern
+            'pattern_min_step_ups':                    cfg.pattern.MIN_STEP_UPS,
+            'pattern_min_advance_retention':           cfg.pattern.MIN_ADVANCE_RETENTION,
+            'pattern_max_pullback_percent':            cfg.pattern.MAX_PULLBACK_PERCENT,
+            'pattern_confluence_normal_min_score':     cfg.pattern.CONFLUENCE_NORMAL_GAP_MIN_SCORE,
+            'pattern_confluence_large_min_score':      cfg.pattern.CONFLUENCE_LARGE_GAP_MIN_SCORE,
+            'pattern_confluence_extreme_min_score':    cfg.pattern.CONFLUENCE_EXTREME_GAP_MIN_SCORE,
+            'pattern_confluence_min_patterns':         cfg.pattern.CONFLUENCE_MIN_PATTERNS,
+            'pattern_weight_step_up':                  cfg.pattern.CONFLUENCE_WEIGHT_STEP_UP,
+            'pattern_weight_volume':                   cfg.pattern.CONFLUENCE_WEIGHT_VOLUME,
+            'pattern_weight_support_resistance':       cfg.pattern.CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE,
+            # Risk
+            'risk_stop_loss_percent_of_account':       cfg.risk.STOP_LOSS_PERCENT_OF_ACCOUNT,
+            'risk_max_hold_time_minutes':              cfg.risk.MAX_HOLD_TIME_MINUTES,
+            'risk_max_position_size_percent':          cfg.risk.MAX_POSITION_SIZE_PERCENT,
+            'risk_max_daily_loss_percent':             cfg.risk.MAX_DAILY_LOSS_PERCENT,
+            'risk_max_concurrent_positions':           cfg.risk.MAX_CONCURRENT_POSITIONS,
+            'risk_atr_trailing_enabled':               cfg.risk.ATR_TRAILING_ENABLED,
+            'risk_atr_trailing_multiplier':            cfg.risk.ATR_TRAILING_MULTIPLIER,
+            'risk_atr_trailing_period':                cfg.risk.ATR_TRAILING_PERIOD,
+            'risk_breakeven_threshold_pct':            cfg.risk.BREAKEVEN_THRESHOLD_PCT,
+            # Reentry
+            'reentry_enabled':                         cfg.reentry.ENABLE_REENTRY,
+            'reentry_max_per_stock':                   cfg.reentry.MAX_REENTRIES_PER_STOCK,
+            'reentry_cooldown_minutes':                cfg.reentry.REENTRY_COOLDOWN_MINUTES,
+            # Backtest
+            'backtest_start_date':                     cfg.backtest.START_DATE,
+            'backtest_end_date':                       cfg.backtest.END_DATE,
+            'backtest_initial_capital':                cfg.backtest.INITIAL_CAPITAL,
+            'backtest_base_data_dir':                  cfg.backtest.BASE_DATA_DIR,
+            'backtest_data_dir':                       cfg.backtest.DATA_DIR,
+            'backtest_max_candidates_per_day':         cfg.backtest.MAX_CANDIDATES_PER_DAY,
+            'backtest_analysis_window_enabled':        cfg.backtest.ANALYSIS_WINDOW_ENABLED,
+            'backtest_analysis_window_start_et':       cfg.backtest.ANALYSIS_WINDOW_START_ET,
+            'backtest_analysis_window_end_et':         cfg.backtest.ANALYSIS_WINDOW_END_ET,
+            'backtest_simple_stops':                   cfg.backtest.SIMPLE_STOPS,
+            'backtest_fast_mode':                      cfg.backtest.FAST_MODE,
         }
 
     def _log_daily_summary(self, daily_summary: Dict):
@@ -729,11 +878,20 @@ if __name__ == '__main__':
     # 5. Config snapshot
     pd.DataFrame([diagnostic.results['config_snapshot']]).to_csv(reports_root / "config_snapshot.csv", index=False)
 
+    # 6. Risk rejections
+    risk_rows = []
+    for ds in diagnostic.results['daily_summaries']:
+        for r in ds['stage'].get('risk', {}).get('rejected', []):
+            row = {k: v for k, v in r.items() if k not in ('bars', 'bars_warm')}
+            risk_rows.append({'date': ds['date'], **row})
+    pd.DataFrame(risk_rows).to_csv(reports_root / "risk_rejections.csv", index=False)
+
     print(f"\n✓ Reports saved to: {reports_root}")
     print(f"   • daily_summary.csv      — {len(report_df)} days")
     print(f"   • warmup_failures.csv    — {len(warmup_rows)} rejections")
     print(f"   • pattern_failures.csv   — {len(pattern_rows)} rejections")
     print(f"   • valid_patterns.csv     — {len(valid_rows)} passes")
     print(f"   • config_snapshot.csv    — effective config at run time")
+    print(f"   • risk_rejections.csv    — {len(risk_rows)} rejections")
     print()
     print(report_df.to_string(index=False))

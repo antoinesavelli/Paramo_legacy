@@ -99,24 +99,62 @@ class PatternAnalyzer:
             # ✅ NEW: Dynamic minimum score based on gap percentage
             min_score = self._get_dynamic_min_score(gap_percent)
             
-            is_valid = (confluence['total_score'] >= min_score and 
+            is_valid = (confluence['total_score'] >= min_score and
                        confluence['pattern_count'] >= min_patterns_required)
+
+            # ── Structured failure reason (for diagnostic sub-reason breakdown) ──
+            if not is_valid:
+                if confluence['total_score'] < min_score:
+                    failure_reason = (
+                        f"score_below_threshold:"
+                        f"score={confluence['total_score']:.1f},"
+                        f"threshold={min_score:.1f}"
+                    )
+                elif confluence['pattern_count'] < min_patterns_required:
+                    failure_reason = (
+                        f"insufficient_pattern_count:"
+                        f"count={confluence['pattern_count']},"
+                        f"required={min_patterns_required}"
+                    )
+                else:
+                    failure_reason = 'pattern_invalid'
+
+                # Step-up sub-reasons (most common failure path)
+                su = step_up
+                step_sub = []
+                if su.get('step_count', 0) < self.config.pattern.MIN_STEP_UPS:
+                    step_sub.append(
+                        f"step_count={su.get('step_count', 0)}<{self.config.pattern.MIN_STEP_UPS}"
+                    )
+                if su.get('retention_rate', 0) < self.config.pattern.MIN_ADVANCE_RETENTION:
+                    step_sub.append(
+                        f"retention={su.get('retention_rate', 0):.1f}%<{self.config.pattern.MIN_ADVANCE_RETENTION}%"
+                    )
+                if step_sub:
+                    failure_reason += '|step_up:' + ','.join(step_sub)
+            else:
+                failure_reason = None
             
             result = {
-                'valid': is_valid,
-                'symbol': symbol,
-                'pattern_strength': confluence['total_score'],
-                'patterns_detected': confluence['patterns_detected'],
-                'pattern_count': confluence['pattern_count'],
-                'min_score_threshold': min_score,  # ✅ NEW: Include threshold used
-                'gap_percent': gap_percent,  # ✅ NEW: Include gap for reference
-                'step_ups': step_up,
-                'parabolic': parabolic,
-                'breakout': breakout,
-                'volume': volume,
-                'support_resistance': sr,
-                'timestamp': datetime.now(),
-                'is_premarket_analyzed': is_premarket
+                'valid':                  is_valid,
+                'reason':                 failure_reason,
+                'symbol':                 symbol,
+                'pattern_strength':       confluence['total_score'],
+                'patterns_detected':      confluence['patterns_detected'],
+                'pattern_count':          confluence['pattern_count'],
+                'min_score_threshold':    min_score,
+                'gap_percent':            gap_percent,
+                'step_ups':               step_up,
+                'parabolic':              parabolic,
+                'breakout':               breakout,
+                'volume':                 volume,
+                'support_resistance':     sr,
+                'timestamp':              datetime.now(),
+                'is_premarket_analyzed':  is_premarket,
+                # ── Entry lag audit fields ──────────────────────────────────────
+                'first_signal_bar_idx':   first_signal_bar_idx,   # bar where threshold first crossed
+                'first_signal_ts_et':     first_signal_ts.strftime('%H:%M ET') if first_signal_ts else None,
+                'entry_lag_bars':         entry_lag_bars,         # bars between first signal and warmup end
             }
             
             # ✅ FIXED: Safe string formatting for gap_percent
@@ -135,6 +173,43 @@ class PatternAnalyzer:
                     for key in list(self.pattern_cache.keys())[:100]:
                         del self.pattern_cache[key]
                 self.pattern_cache[cache_key] = result
+            
+            # ── First-qualifying-bar detection (for entry lag audit) ──────────────
+            first_signal_bar_idx = -1
+            first_signal_ts      = None
+            entry_lag_bars       = None
+
+            if is_valid:
+                first_signal_bar_idx = self._find_first_qualifying_bar(bars)
+                last_bar_idx         = len(bars) - 1   # warmup - 1 in caller
+
+                if first_signal_bar_idx >= 0 and 'timestamp' in bars.columns:
+                    raw_ts = bars.iloc[first_signal_bar_idx]['timestamp']
+                    first_signal_ts = pd.Timestamp(raw_ts)
+                    if first_signal_ts.tz is None:
+                        first_signal_ts = first_signal_ts.tz_localize('UTC')
+                    first_signal_ts = first_signal_ts.tz_convert('US/Eastern')
+
+                    last_bar_ts_raw = bars.iloc[last_bar_idx]['timestamp']
+                    last_bar_ts = pd.Timestamp(last_bar_ts_raw)
+                    if last_bar_ts.tz is None:
+                        last_bar_ts = last_bar_ts.tz_localize('UTC')
+                    last_bar_ts = last_bar_ts.tz_convert('US/Eastern')
+
+                    entry_lag_bars = last_bar_idx - first_signal_bar_idx
+
+                    if entry_lag_bars > 0:
+                        self.logger.warning(
+                            f"[ENTRY LAG] {symbol}: pattern first qualified at bar {first_signal_bar_idx} "
+                            f"({first_signal_ts.strftime('%H:%M ET')}) "
+                            f"but warmup window ends at bar {last_bar_idx} "
+                            f"({last_bar_ts.strftime('%H:%M ET')}) — "
+                            f"{entry_lag_bars} bar lag ({entry_lag_bars} min stale)"
+                        )
+                    else:
+                        self.logger.debug(
+                            f"[ENTRY LAG] {symbol}: pattern qualified at final warmup bar — no lag"
+                        )
             
             return result
         except Exception as e:
@@ -451,3 +526,26 @@ class PatternAnalyzer:
             'score_before_penalty': normalized_score,
             'gap_penalty_applied': penalty_applied
         }
+
+    def _find_first_qualifying_bar(self, bars: pd.DataFrame) -> int:
+        """
+        Return the bar index (0-based) at which the step-up pattern first
+        satisfies both MIN_STEP_UPS and MIN_ADVANCE_RETENTION thresholds.
+        Returns -1 if conditions are never met across the full window.
+        """
+        pc = self.config.pattern
+        min_steps     = pc.MIN_STEP_UPS
+        min_retention = pc.MIN_ADVANCE_RETENTION
+
+        # Need at least 3 bars to find a local high
+        for end_idx in range(3, len(bars) + 1):
+            window = bars.iloc[:end_idx]
+            highs, lows = self._find_highs_lows(window)
+            if len(highs) < 2:
+                continue
+            step_count, total_advance, total_retained = self._count_step_ups(window, highs, lows)
+            retention = (total_retained / total_advance * 100) if total_advance > 0 else 0
+            if step_count >= min_steps and retention >= min_retention:
+                return end_idx - 1   # bar index (0-based) where threshold crossed
+
+        return -1

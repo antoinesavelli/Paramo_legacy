@@ -207,9 +207,14 @@ class NewsIntegrationBacktest:
                 'max_negative': max_negative,
             }
 
+        # Collect article links
+        link_col = next((c for c in sym_df.columns if c in ('link', 'url', 'article_url')), None)
+        links = sym_df[link_col].dropna().tolist() if link_col else []
+
         return {
             'approved': True,
             'reason': 'approved',
             'earliest_news_time': earliest_news_time,
             'max_negative': max_negative,
+            'article_links': links,
         }

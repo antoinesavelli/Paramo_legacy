@@ -463,7 +463,10 @@ class Backtester:
         else:
             session_start_et = pd.Timestamp(day.replace(hour=9, minute=30), tz='US/Eastern')
         
-        session_end_et = pd.Timestamp(day.replace(hour=20, minute=0), tz='US/Eastern')
+        after_hours_end = datetime.strptime(session_cfg.AFTER_HOURS_END_ET, "%H:%M").time()
+        session_end_et = pd.Timestamp(
+            day.replace(hour=after_hours_end.hour, minute=after_hours_end.minute), tz='US/Eastern'
+        )
         session_start_utc = session_start_et.tz_convert('UTC')
         session_end_utc = session_end_et.tz_convert('UTC')
 

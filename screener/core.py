@@ -39,13 +39,13 @@ class UnifiedScreener:
     """Unified screener logic used by both live and backtest."""
     
     def __init__(
-        self, 
-        config, 
-        data_handler, 
-        pattern_analyzer: PatternAnalyzer, 
+        self,
+        config,
+        data_handler,
+        pattern_analyzer: PatternAnalyzer,
         news_integration=None,
         market_context=None,
-        logger=None, 
+        logger=None,
         is_live=False
     ):
         self.config = config
@@ -173,6 +173,10 @@ class UnifiedScreener:
             warmup = session_cfg.PREMARKET_WARMUP_MINUTES
             min_bars = session_cfg.PREMARKET_MIN_BARS
         else:
+            after_hours_end = datetime.strptime(session_cfg.AFTER_HOURS_END_ET, "%H:%M").time()
+            session_end_et = pd.Timestamp(
+                day.replace(hour=after_hours_end.hour, minute=after_hours_end.minute), tz='US/Eastern'
+            )
             session_start_et = pd.Timestamp(
                 day.replace(hour=9, minute=30), 
                 tz='US/Eastern'
@@ -309,9 +313,29 @@ class UnifiedScreener:
 
             # ✅ NEW: PRICE RANGE CHECK (before expensive pattern analysis)
             # Use the entry price (close of last warmup bar) for validation
-            entry_row = bars.iloc[warmup - 1]
-            entry_price = float(entry_row['close'])
-            
+            # ── Entry price: next bar's open (first tradeable bar after signal confirms) ──
+            # bars.iloc[warmup - 1] = last bar pattern analysis runs on (signal bar, not fill)
+            # bars.iloc[warmup]     = first bar available for live fill
+            if len(bars) <= warmup:
+                diagnostics.append({
+                    "date": pd.Timestamp(day).date(),
+                    "symbol": symbol,
+                    "gap_percent": gap_pct,
+                    "relative_volume": rel_vol,
+                    "daily_volume": daily_volume,
+                    "phase": "reject",
+                    "reason": "no_next_bar_for_entry",
+                    "rows": len(bars),
+                    "warmup": warmup
+                })
+                stats["reject_reasons"]["no_next_bar_for_entry"] += 1
+                continue
+
+            signal_row  = bars.iloc[warmup - 1]   # last bar pattern runs on (close = signal)
+            next_row    = bars.iloc[warmup]        # first bar after pattern confirms (open = fill)
+            entry_price = float(next_row['open'])
+            entry_ts    = next_row['timestamp']
+
             if entry_price < min_price:
                 diagnostics.append({
                     "date": pd.Timestamp(day).date(),
@@ -326,32 +350,22 @@ class UnifiedScreener:
                 })
                 stats["reject_reasons"]["price_out_of_range"] += 1
                 stats["after_price_filter"] = stats["processed"] - stats["reject_reasons"]["price_out_of_range"]
-                
                 self.logger.debug(
-                    f"[REJECT] {symbol} - Price ${entry_price:.2f} below minimum limit "
+                    f"[REJECT] {symbol} - Price ${entry_price:.2f} below minimum "
                     f"(${min_price:.2f})"
                 )
                 continue
-            
-            # Pattern analysis (uses warmup period for initial pattern detection)
+
+            # Pattern analysis uses warmup bars only (up to and including signal_row)
             bars_warm = bars.iloc[:warmup].copy()
-            
-            # Calculate entry timestamp (already extracted above for price check)
-            entry_ts = entry_row['timestamp']
-            
-            # ✅ Check if entry time falls within analysis window
+
+            # ── Analysis window gate on fill bar timestamp ────────────────────
             if analysis_window_start_utc is not None and analysis_window_end_utc is not None:
-                # ✅ FIXED: Handle timezone-aware timestamp properly
                 if isinstance(entry_ts, pd.Timestamp):
-                    # Already a pandas Timestamp, ensure it's in UTC
-                    if entry_ts.tz is None:
-                        entry_ts_utc = entry_ts.tz_localize('UTC')
-                    else:
-                        entry_ts_utc = entry_ts.tz_convert('UTC')
+                    entry_ts_utc = entry_ts.tz_localize('UTC') if entry_ts.tz is None else entry_ts.tz_convert('UTC')
                 else:
-                    # Convert to pandas Timestamp with UTC timezone
                     entry_ts_utc = pd.Timestamp(entry_ts).tz_localize('UTC')
-                
+
                 if entry_ts_utc < analysis_window_start_utc or entry_ts_utc >= analysis_window_end_utc:
                     entry_et = entry_ts_utc.tz_convert('US/Eastern')
                     diagnostics.append({
@@ -418,18 +432,20 @@ class UnifiedScreener:
             
             signals.append(CandidateSignal(
                 symbol=symbol,
-                entry_ts=entry_ts,
-                entry_price=entry_price,
+                entry_ts=entry_ts,           # next_row timestamp — actual fill bar
+                entry_price=entry_price,     # next_row open      — actual fill price
                 stop_price=stop_price,
                 gap_percent=gap_pct,
                 pattern_strength=float(pa.get('pattern_strength', 0) or 0),
                 relative_volume=rel_vol,
                 meta={
-                    "last_price": float(row['last_price']),
-                    "open_price": float(row.get('open_price', entry_price)),
-                    "prev_close": float(row.get('prev_close', entry_price / (1 + gap_pct/100))),
-                    "is_premarket": is_premarket_entry,
-                    "daily_volume": int(daily_volume) if daily_volume else None
+                    "last_price":       float(row['last_price']),
+                    "open_price":       float(row.get('open_price', entry_price)),
+                    "prev_close":       float(row.get('prev_close', entry_price / (1 + gap_pct/100))),
+                    "is_premarket":     is_premarket_entry,
+                    "daily_volume":     int(daily_volume) if daily_volume else None,
+                    "signal_bar_ts":    signal_row['timestamp'],   # last warmup bar — for audit
+                    "signal_bar_close": float(signal_row['close']), # what the old code used as entry
                 }
             ))
             stats["signals"] += 1

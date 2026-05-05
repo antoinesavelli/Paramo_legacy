@@ -22,18 +22,16 @@ def calculate_hash(data: Any) -> str:
 def validate_config(config: Any) -> bool:
     """Validate configuration has all required attributes."""
     try:
-        # Basic nested existence checks
         required = [
             config.api.ALPACA_API_KEY,
             config.api.ALPACA_SECRET_KEY,
-            config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT,  # ✅ Updated
-            config.risk.PROFIT_TARGET_PERCENT_OF_ACCOUNT,  # ✅ Updated
+            config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT,
             config.risk.MAX_CONCURRENT_POSITIONS,
             config.screening.MIN_GAP_PERCENT
         ]
         if any(v is None for v in required):
             return False
-        if config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT <= 0 or config.risk.MAX_CONCURRENT_POSITIONS <= 0:  # ✅ Updated
+        if config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT <= 0 or config.risk.MAX_CONCURRENT_POSITIONS <= 0:
             return False
         return True
     except AttributeError:
@@ -63,13 +61,16 @@ def calculate_compound_return(initial: float, final: float, periods: int) -> flo
 
 
 def is_market_hours(timestamp: datetime, config: Any) -> bool:
-    """Check if timestamp is during market hours."""
+    """Check if timestamp is during market hours (premarket open → after-hours close)."""
+    from datetime import time as dt_time
     eastern = pytz.timezone('US/Eastern')
     dt = timestamp.astimezone(eastern)
     if dt.weekday() >= 5:
         return False
     market_time = dt.time()
-    return config.market_hours.PRE_MARKET_START <= market_time <= config.market_hours.AFTER_HOURS_END
+    start = dt_time(*map(int, config.session.PREMARKET_START_ET.split(":")))
+    end   = dt_time(*map(int, config.session.AFTER_HOURS_END_ET.split(":")))
+    return start <= market_time <= end
 
 
 def save_state(data: Dict, filepath: str) -> bool:

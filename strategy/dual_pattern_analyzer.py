@@ -1,0 +1,171 @@
+# =====================================================
+# dual_pattern_analyzer.py - Composite Pattern Analyzer
+# =====================================================
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Dict, NamedTuple, Optional
+
+import pandas as pd
+
+from strategy.pattern_analyzer import PatternAnalyzer
+from strategy.claude_pattern_analyzer import ClaudePatternAnalyzer, ClaudeAnalyzerError
+from utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from strategy.analyzer_protocol import PatternAnalyzerProtocol
+
+_VALID_MODES = {"hard_coded_only", "claude_only", "both"}
+_VALID_CONSENSUS = {"and", "or", "primary_hard_coded", "primary_claude"}
+
+
+class _AnalysisArgs(NamedTuple):
+    """Bundles the forwarded analyze_pattern call arguments."""
+    symbol: str
+    bars: Optional[pd.DataFrame]
+    cache_key: Optional[str]
+    is_premarket: bool
+    gap_percent: Optional[float]
+
+
+class DualPatternAnalyzer:
+    """
+    Composite analyzer that wraps PatternAnalyzer and ClaudePatternAnalyzer.
+
+    Dispatch and consensus behaviour are controlled entirely by
+    ``config.claude_analyzer``.  The screener pipeline needs zero changes —
+    this object is injected as a drop-in for ``PatternAnalyzer``.
+    """
+
+    def __init__(
+        self,
+        hard_coded: PatternAnalyzer,
+        claude: ClaudePatternAnalyzer,
+        config,
+        is_backtest: bool = False,
+    ):
+        self._hard_coded = hard_coded
+        self._claude = claude
+        self._cfg = config.claude_analyzer
+        self.is_backtest = is_backtest
+        self.logger = get_logger(__name__, component="dual_analyzer")
+
+        if self._cfg.MODE not in _VALID_MODES:
+            raise ValueError(
+                f"ClaudeAnalyzerConfig.MODE must be one of {_VALID_MODES}, "
+                f"got '{self._cfg.MODE}'"
+            )
+        if self._cfg.CONSENSUS not in _VALID_CONSENSUS:
+            raise ValueError(
+                f"ClaudeAnalyzerConfig.CONSENSUS must be one of {_VALID_CONSENSUS}, "
+                f"got '{self._cfg.CONSENSUS}'"
+            )
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def analyze_pattern(
+        self,
+        symbol: str,
+        bars: Optional[pd.DataFrame] = None,
+        cache_key: Optional[str] = None,
+        is_premarket: bool = False,
+        gap_percent: Optional[float] = None,
+    ) -> Dict:
+        req = _AnalysisArgs(symbol, bars, cache_key, is_premarket, gap_percent)
+        mode = self._cfg.MODE
+
+        if mode == "hard_coded_only":
+            return self._hard_coded.analyze_pattern(*req)
+
+        claude_allowed = self._claude_permitted()
+
+        if mode == "claude_only":
+            if not claude_allowed:
+                self.logger.info(
+                    f"{symbol}: Claude skipped (backtest guard). "
+                    "Falling back to hard-coded."
+                )
+                return self._hard_coded.analyze_pattern(*req)
+            return self._run_claude_with_fallback(req, fallback_on_error=True)
+
+        # mode == "both"
+        hc_result = self._hard_coded.analyze_pattern(*req)
+
+        if not claude_allowed:
+            self.logger.debug(
+                f"{symbol}: Claude skipped (backtest guard). Using hard-coded result."
+            )
+            hc_result.setdefault("meta", {})["claude_skipped"] = True
+            return hc_result
+
+        claude_result = self._run_claude_with_fallback(req, fallback_on_error=False)
+
+        if claude_result is None:
+            hc_result.setdefault("meta", {})["claude_error"] = True
+            return hc_result
+
+        return self._apply_consensus(hc_result, claude_result, symbol)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _claude_permitted(self) -> bool:
+        """Return False when Claude must be skipped for this call."""
+        return not (self.is_backtest and not self._cfg.ENABLED_IN_BACKTEST)
+
+    def _run_claude_with_fallback(
+        self,
+        req: _AnalysisArgs,
+        fallback_on_error: bool,
+    ) -> Optional[Dict]:
+        """
+        Call Claude.  On ClaudeAnalyzerError:
+        - fallback_on_error=True  → run hard-coded and return its result
+        - fallback_on_error=False → return None so the caller decides
+        """
+        try:
+            return self._claude.analyze_pattern(*req)
+        except ClaudeAnalyzerError as exc:
+            self.logger.warning(
+                f"{req.symbol}: ClaudeAnalyzerError — {exc}. "
+                + ("Falling back to hard-coded result." if fallback_on_error else "")
+            )
+            if fallback_on_error:
+                result = self._hard_coded.analyze_pattern(*req)
+                result.setdefault("meta", {})["claude_fallback"] = str(exc)
+                return result
+            return None
+
+    def _apply_consensus(self, hc: Dict, claude: Dict, symbol: str) -> Dict:
+        """Merge two result dicts according to the configured consensus rule."""
+        consensus = self._cfg.CONSENSUS
+        meta = {"hard_coded": hc, "claude": claude, "consensus_mode": consensus}
+
+        if consensus == "and":
+            winner = dict(hc)
+            winner["valid"] = hc["valid"] and claude["valid"]
+
+        elif consensus == "or":
+            if hc["valid"] or claude["valid"]:
+                winner = dict(
+                    hc if hc.get("pattern_strength", 0) >= claude.get("pattern_strength", 0)
+                    else claude
+                )
+            else:
+                winner = dict(hc)
+
+        elif consensus == "primary_hard_coded":
+            winner = dict(hc)
+
+        else:  # primary_claude
+            winner = dict(claude)
+
+        winner["meta"] = meta
+        self.logger.info(
+            f"{symbol}: consensus={consensus} → valid={winner['valid']} "
+            f"hc_valid={hc['valid']} claude_valid={claude['valid']}"
+        )
+        return winner
