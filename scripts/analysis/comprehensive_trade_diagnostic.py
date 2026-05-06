@@ -21,8 +21,8 @@ sys.path.insert(0, project_root)
 
 from config.loader import build_config
 from data_handler.local import LocalDataHandler
-from data_handler.aggregate_handler import AggregateDataHandler
-from strategy.pattern_analyzer import PatternAnalyzer
+from data_handler.aggregates.aggregate_handler import AggregateDataHandler
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from screener.helpers import BacktestRelativeVolumeCalculator
 from market_context.backtest import BacktestMarketContext
 from utils.logging import get_logger

@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional
 
 import pandas as pd
 
-from strategy.pattern_analyzer import PatternAnalyzer
-from strategy.claude_pattern_analyzer import ClaudePatternAnalyzer, ClaudeAnalyzerError
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
+from strategy.patterns.claude_pattern_analyzer import ClaudePatternAnalyzer, ClaudeAnalyzerError
 from utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from strategy.analyzer_protocol import PatternAnalyzerProtocol
+    from strategy.patterns.analyzer_protocol import PatternAnalyzerProtocol
 
 _VALID_MODES = {"hard_coded_only", "claude_only", "both"}
 _VALID_CONSENSUS = {"and", "or", "primary_hard_coded", "primary_claude"}

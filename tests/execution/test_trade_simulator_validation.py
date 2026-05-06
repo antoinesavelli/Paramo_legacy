@@ -6,7 +6,7 @@ by sub-classing and providing minimal stubs.
 import pytest
 import pandas as pd
 from unittest.mock import MagicMock, patch
-from backtester.trade_simulator import TradeSimulator
+from execution.trade_simulator import TradeSimulator
 
 
 # ---------------------------------------------------------------------------

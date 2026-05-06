@@ -5,12 +5,12 @@
 from config.config import TradingConfig
 from data_handler.api import APIDataHandler
 from screener.live import LiveScreener
-from strategy.pattern_analyzer import PatternAnalyzer
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from strategy.risk_manager import RiskManager
 from core.trade_executor import TradeExecutor
 from core.monitor import Monitor
 from market_context.live import MarketContext
-from utils.reporting import compute_statistics, generate_text_report
+from monitoring.reporting import compute_statistics, generate_text_report
 import alpaca_trade_api as tradeapi
 from datetime import datetime, timezone
 from typing import Optional

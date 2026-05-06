@@ -6,7 +6,7 @@ files are written to disk.
 import sqlite3
 import pytest
 from unittest.mock import MagicMock, patch
-from core.monitor import Monitor
+from monitoring.monitor import Monitor
 
 
 # ---------------------------------------------------------------------------

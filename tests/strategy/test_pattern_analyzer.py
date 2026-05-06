@@ -20,7 +20,7 @@ from datetime import datetime
 
 from config import TradingConfig
 from config.loader import apply_overrides_immutable
-from strategy.pattern_analyzer import PatternAnalyzer, _DETECTOR_DISABLED
+from strategy.patterns.pattern_analyzer import PatternAnalyzer, _DETECTOR_DISABLED
 
 
 # ---------------------------------------------------------------------------

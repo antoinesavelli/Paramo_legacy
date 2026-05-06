@@ -1,5 +1,5 @@
 ﻿# =====================================================
-# strategy/backtester.py - Backtesting Logic for Intraday Trading
+# run/backtest_engine.py - Backtesting Logic for Intraday Trading
 # =====================================================
 
 from datetime import datetime, timedelta
@@ -13,7 +13,7 @@ import numpy as np
 from utils.logging import get_logger
 from utils.progress import BacktestProgressTracker
 from data_handler.local import LocalDataHandler
-from strategy.pattern_analyzer import PatternAnalyzer
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from execution.trade_simulator import TradeSimulator
 from monitoring.reporting import compute_statistics
 from news.backtest import NewsIntegrationBacktest

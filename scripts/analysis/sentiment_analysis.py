@@ -26,7 +26,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from config.config import TradingConfig
-from data_handler.aggregate_handler import AggregateDataHandler
+from data_handler.aggregates.aggregate_handler import AggregateDataHandler
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONFIG — edit these two toggles

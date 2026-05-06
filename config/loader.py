@@ -26,12 +26,12 @@ def _coerce(example: Any, raw: str):
         try:
             return int(raw)
         except (ValueError, TypeError):
-            raise ValueError(f"Cannot coerce {raw!r} to int") from None
+            return example
     if isinstance(example, float):
         try:
             return float(raw)
         except (ValueError, TypeError):
-            raise ValueError(f"Cannot coerce {raw!r} to float") from None
+            return example
     if isinstance(example, list):
         return [x.strip() for x in raw.split(",")]
     return raw

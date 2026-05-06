@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 from config import TradingConfig
-from strategy.pattern_analyzer import PatternAnalyzer
-from strategy.analyzer_protocol import PatternAnalyzerProtocol
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
+from strategy.patterns.analyzer_protocol import PatternAnalyzerProtocol
 from utils.logging import get_logger
 
 logger = get_logger(__name__, component="analyzer_factory")
@@ -41,8 +41,8 @@ def build_pattern_analyzer(
         return hard_coded
 
     # Only import heavy Claude dependencies when actually needed
-    from strategy.claude_pattern_analyzer import ClaudePatternAnalyzer
-    from strategy.dual_pattern_analyzer import DualPatternAnalyzer
+    from strategy.patterns.claude_pattern_analyzer import ClaudePatternAnalyzer
+    from strategy.patterns.dual_pattern_analyzer import DualPatternAnalyzer
 
     analyzer = DualPatternAnalyzer(
         hard_coded=hard_coded,

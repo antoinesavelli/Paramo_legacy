@@ -12,14 +12,14 @@ from pathlib import Path
 
 from utils.logging import get_logger
 from strategy.risk_manager import calc_atr_stop
-from strategy.pattern_analyzer import PatternAnalyzer
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from screener.rules import cfg_view_from
 from screener.helpers import (
     LiveRelativeVolumeCalculator,
     BacktestRelativeVolumeCalculator,
     DiagnosticCreator
 )
-from data_handler.aggregate_handler import AggregateDataHandler
+from data_handler.aggregates.aggregate_handler import AggregateDataHandler
 
 
 @dataclass

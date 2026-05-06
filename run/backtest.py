@@ -83,8 +83,8 @@ def main():
 
         from data_handler.local import LocalDataHandler
         from data_handler.base import DataHandler
-        from strategy.pattern_analyzer import PatternAnalyzer
-        from strategy.backtester import Backtester
+        from strategy.patterns.pattern_analyzer import PatternAnalyzer
+        from run.backtest_engine import Backtester
 
         local_data_handler: DataHandler = LocalDataHandler(config, data_dir=config.backtest.DATA_DIR)
 

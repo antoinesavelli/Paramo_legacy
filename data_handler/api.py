@@ -12,7 +12,7 @@ from config import TradingConfig
 from utils.logging import get_logger
 from utils.helpers import log_and_return
 import yfinance as yf
-from data_handler.gap_calculator import GapCalculator
+from data_handler.gap.gap_calculator import GapCalculator
 
 def fetch_bars(api, symbol, timeframe, limit, logger):
     """Helper to fetch bars with error handling."""

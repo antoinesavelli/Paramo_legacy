@@ -36,7 +36,7 @@ from config.config import (
     BacktestConfig,
     ScreeningConfig,
 )
-from data_handler.aggregate_handler import AggregateDataHandler
+from data_handler.aggregates.aggregate_handler import AggregateDataHandler
 
 # ── band definitions (right-exclusive except the last) ───────────────────────
 BANDS: list[tuple[float, float, str]] = [

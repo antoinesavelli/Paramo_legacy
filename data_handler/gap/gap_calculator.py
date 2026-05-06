@@ -25,8 +25,8 @@ from collections import defaultdict
 import logging
 import gc
 
-from data_handler.aggregate_prefilter import AggregatePreFilter
-from data_handler.gap_monitor import AdaptiveGapMonitor
+from data_handler.aggregates.aggregate_prefilter import AggregatePreFilter
+from data_handler.gap.gap_monitor import AdaptiveGapMonitor
 
 logger = logging.getLogger("data_handler.gap_calculator")
 

@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 
 from utils.logging import get_logger
-from strategy.pattern_analyzer import PatternAnalyzer
+from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from news.backtest import NewsIntegrationBacktest
 from screener.core import UnifiedScreener, CandidateSignal
 from data_handler.base import DataHandler  # ADD
@@ -53,7 +53,7 @@ class BacktestScreener:
         self.logger.info("=" * 80)
         
         # NOTE: FIX: Use AggregateDataHandler directly instead of deprecated calculate_gaps()
-        from data_handler.aggregate_handler import AggregateDataHandler
+        from data_handler.aggregates.aggregate_handler import AggregateDataHandler
         
         agg_dir = Path(self.config.backtest.BASE_DATA_DIR) / "daily_aggregates"
         agg_handler = AggregateDataHandler(str(agg_dir))

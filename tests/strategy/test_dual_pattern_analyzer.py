@@ -12,8 +12,8 @@ import pandas as pd
 import pytest
 
 from config.config import TradingConfig, ClaudeAnalyzerConfig
-from strategy.claude_pattern_analyzer import ClaudeAnalyzerError
-from strategy.dual_pattern_analyzer import DualPatternAnalyzer
+from strategy.patterns.claude_pattern_analyzer import ClaudeAnalyzerError
+from strategy.patterns.dual_pattern_analyzer import DualPatternAnalyzer
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +265,7 @@ class TestFallbackOnError:
 class TestClaudePatternAnalyzerSchema:
     def _make_analyzer(self, mock_response_text: str):
         """Build a ClaudePatternAnalyzer with the Anthropic SDK fully mocked."""
-        from strategy.claude_pattern_analyzer import ClaudePatternAnalyzer
+        from strategy.patterns.claude_pattern_analyzer import ClaudePatternAnalyzer
 
         config = TradingConfig()
         analyzer = ClaudePatternAnalyzer.__new__(ClaudePatternAnalyzer)
@@ -327,14 +327,14 @@ class TestClaudePatternAnalyzerSchema:
         assert isinstance(result["pattern_strength"], float)
 
     def test_invalid_json_raises_claude_error(self):
-        from strategy.claude_pattern_analyzer import ClaudeAnalyzerError
+        from strategy.patterns.claude_pattern_analyzer import ClaudeAnalyzerError
         analyzer = self._make_analyzer("not json at all")
         with pytest.raises(ClaudeAnalyzerError, match="non-JSON"):
             analyzer.analyze_pattern("TST", _make_bars(), gap_percent=20.0)
 
     def test_missing_keys_raises_claude_error(self):
         import json
-        from strategy.claude_pattern_analyzer import ClaudeAnalyzerError
+        from strategy.patterns.claude_pattern_analyzer import ClaudeAnalyzerError
         # Return JSON that is missing most required keys
         analyzer = self._make_analyzer(json.dumps({"valid": True}))
         with pytest.raises(ClaudeAnalyzerError, match="missing keys"):
