@@ -208,9 +208,9 @@ class TradeSimulator:
         gap_threshold = getattr(self.config.risk, 'SLIPPAGE_GAP_THRESHOLD', 200.0)
         if self.config.risk.ENABLE_SLIPPAGE:
             slip_pct = (
-                self.config.risk.ENTRY_SLIPPAGE_HIGH_GAP_PCT
+                self.config.risk.SLIPPAGE_ENTRY_HIGH_GAP_PCT
                 if gap_pct > gap_threshold
-                else self.config.risk.ENTRY_SLIPPAGE_PCT
+                else self.config.risk.SLIPPAGE_ENTRY_PCT
             )
             entry_price = entry_price * (1 + slip_pct)
 

@@ -26,6 +26,7 @@ import re
 import logging
 from pathlib import Path
 from collections import OrderedDict
+from utils.helpers import validate_ohlcv
 
 logger = logging.getLogger("data_handler.local")
 
@@ -230,6 +231,7 @@ class LocalDataHandler:
             
             if not df.empty:
                 df = self._normalize_columns(df)
+                df = validate_ohlcv(df, source=date_str, logger=logger)
                 
                 # NOTE: LRU cache eviction with explicit cleanup
                 if len(self._day_cache) >= self._day_cache_limit:

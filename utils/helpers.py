@@ -7,6 +7,8 @@ import logging
 from datetime import datetime
 import pytz
 import os
+import pandas as pd
+import numpy as np
 
 
 def calculate_hash(data: Any) -> str:
@@ -94,6 +96,61 @@ def log_and_return(logger, message, return_value):
     """Log error message and return a value (for error handling patterns)."""
     logger.error(message)
     return return_value
+
+
+def validate_ohlcv(
+    df: pd.DataFrame,
+    source: str = "",
+    logger: Optional[Any] = None,
+) -> pd.DataFrame:
+    """
+    Drop rows with clearly invalid OHLCV data without altering trading logic.
+
+    Only removes records that would produce undefined behaviour downstream:
+    negative prices, NaN / infinite core fields, or high < low.
+
+    Args:
+        df:      DataFrame expected to contain open, high, low, close, volume.
+        source:  Label used in log messages (e.g. symbol + date for context).
+        logger:  Optional logger; falls back to the module-level logging root.
+
+    Returns:
+        Cleaned DataFrame with the same schema.  May be empty if every row is
+        invalid.  Never raises.
+    """
+    _log = logger if logger is not None else logging.getLogger("data_handler.ohlcv_validator")
+
+    if df is None or df.empty:
+        return df
+
+    price_cols = [c for c in ("open", "high", "low", "close") if c in df.columns]
+    vol_cols   = [c for c in ("volume",) if c in df.columns]
+    core_cols  = price_cols + vol_cols
+
+    original_len = len(df)
+    mask = pd.Series(True, index=df.index)
+
+    # 1. Drop rows where any core field is NaN or infinite.
+    for col in core_cols:
+        mask &= df[col].notna() & np.isfinite(df[col].values)
+
+    # 2. Drop rows with non-positive prices.
+    for col in price_cols:
+        mask &= df[col] > 0
+
+    # 3. Drop rows where high < low (fundamental OHLCV integrity violation).
+    if "high" in df.columns and "low" in df.columns:
+        mask &= df["high"] >= df["low"]
+
+    dropped = int(original_len - mask.sum())
+    if dropped > 0:
+        _log.warning(
+            "validate_ohlcv[%s]: dropped %d/%d rows with invalid OHLCV data",
+            source, dropped, original_len,
+        )
+        return df[mask].reset_index(drop=True)
+
+    return df
 
 
 def check_first_bar(data_dir, date_str, symbol, tz='US/Eastern'):

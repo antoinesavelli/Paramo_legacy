@@ -45,7 +45,7 @@ class TestDatabaseInit:
                 r[0] for r in
                 conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
-        assert {"trades", "system_logs", "performance_metrics"} <= tables
+        assert {"trades", "system_logs", "performance_metrics", "order_audit"} <= tables
 
     def test_init_idempotent(self, monitor):
         """Calling _init_database a second time must not raise."""

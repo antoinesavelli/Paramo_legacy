@@ -174,6 +174,8 @@ class RiskConfig:
     SLIPPAGE_STOP_HIGH_GAP_PCT: float = 0.12
     SLIPPAGE_STOP_NORMAL_PCT: float = 0.08
     SLIPPAGE_GAP_THRESHOLD: float = 200.0
+    SLIPPAGE_ENTRY_PCT: float = 0.005           # entry fill slippage (backtest)
+    SLIPPAGE_ENTRY_HIGH_GAP_PCT: float = 0.015  # entry slippage on large-gap days (backtest)
 
     # Re-entry
     ENABLE_REENTRY: bool = False
@@ -183,8 +185,8 @@ class RiskConfig:
     # Live order aggressiveness — how far above ask to set limit price
     # to ensure a fill on a fast-moving stock. Not slippage simulation.
     # Only used by TradeExecutor (live). TradeSimulator does not use these.
-    LIMIT_ORDER_AGGRESSION_PCT: float = 0.005        # was ENTRY_SLIPPAGE_PCT
-    LIMIT_ORDER_HIGH_GAP_AGGRESSION_PCT: float = 0.015  # was ENTRY_SLIPPAGE_HIGH_GAP_PCT
+    LIMIT_ORDER_AGGRESSION_PCT: float = 0.005
+    LIMIT_ORDER_HIGH_GAP_AGGRESSION_PCT: float = 0.015
 
 @dataclass(frozen=True)
 class SystemConfig:

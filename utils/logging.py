@@ -1,5 +1,6 @@
 ﻿"""Logging utilities and helpers."""
 
+import atexit
 import logging
 from typing import Optional
 from contextlib import contextmanager
@@ -161,6 +162,9 @@ class OptimizedLogger:
         self.enabled = enabled
         self._buffer = []
         self._buffer_size = 1000
+        # Guarantee buffer is flushed even if the caller forgets — covers normal
+        # interpreter shutdown and most crash paths.
+        atexit.register(self.flush)
     
     def info(self, msg, *args, **kwargs):
         """Log info message (buffered)."""
@@ -200,3 +204,18 @@ class OptimizedLogger:
         for level, msg, args, kwargs in self._buffer:
             getattr(self.base_logger, level)(msg, *args, **kwargs)
         self._buffer.clear()
+
+    def __del__(self):
+        """Flush on garbage collection to cover crash / early-exit scenarios."""
+        try:
+            self.flush()
+        except Exception:
+            pass  # Suppress all errors during interpreter shutdown
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Flush when used as a context manager, even if an exception occurred."""
+        self.flush()
+        return False  # Do not suppress exceptions

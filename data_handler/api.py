@@ -3,6 +3,7 @@
 # =====================================================
 
 import alpaca_trade_api as tradeapi
+import concurrent.futures
 import pandas as pd
 from datetime import datetime
 import pytz
@@ -10,15 +11,38 @@ from typing import Dict, List, Optional
 import time
 from config import TradingConfig
 from utils.logging import get_logger
-from utils.helpers import log_and_return
+from utils.helpers import log_and_return, validate_ohlcv
 import yfinance as yf
 from data_handler.gap.gap_calculator import GapCalculator
 
-def fetch_bars(api, symbol, timeframe, limit, logger):
-    """Helper to fetch bars with error handling."""
+# Default timeout applied to every blocking Alpaca API call.
+_API_TIMEOUT_SECONDS: float = 30.0
+
+
+def _call_with_timeout(fn, timeout_sec: float = _API_TIMEOUT_SECONDS):
+    """
+    Execute *fn* in a worker thread and return its result.
+
+    Raises ``concurrent.futures.TimeoutError`` if the call has not returned
+    within *timeout_sec* seconds, preventing the caller from hanging
+    indefinitely on a slow or stalled Alpaca endpoint.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fn)
+        return future.result(timeout=timeout_sec)
+
+
+def fetch_bars(api, symbol, timeframe, limit, logger, timeout_sec: float = _API_TIMEOUT_SECONDS):
+    """Helper to fetch bars with error handling and a hard timeout."""
     try:
-        bars = api.get_bars(symbol, timeframe, limit=limit, end=datetime.now()).df
+        bars = _call_with_timeout(
+            lambda: api.get_bars(symbol, timeframe, limit=limit, end=datetime.now()).df,
+            timeout_sec=timeout_sec,
+        )
         return bars
+    except concurrent.futures.TimeoutError:
+        logger.error("Timeout fetching bars for %s after %.0fs", symbol, timeout_sec)
+        return pd.DataFrame()
     except Exception as e:
         logger.error("Error fetching bars for %s: %s", symbol, e)
         return pd.DataFrame()
@@ -127,12 +151,14 @@ class APIDataHandler:
             start = pd.Timestamp(day).normalize()
             end = start + pd.Timedelta(days=1)
             
-            bars = self.api.get_bars(
-                symbol, 
-                '1Day', 
-                start=start.isoformat(),
-                end=end.isoformat()
-            ).df
+            bars = _call_with_timeout(
+                lambda: self.api.get_bars(
+                    symbol,
+                    '1Day',
+                    start=start.isoformat(),
+                    end=end.isoformat(),
+                ).df,
+            )
             
             if bars.empty:
                 return None
@@ -209,6 +235,7 @@ class APIDataHandler:
                 bars['symbol'] = symbol
                 bars['vwap'] = (bars['close'] * bars['volume']).cumsum() / bars['volume'].cumsum()
                 bars['dollar_volume'] = bars['close'] * bars['volume']
+                bars = validate_ohlcv(bars, source=symbol, logger=self.logger)
                 if attempt > 0:
                     self.logger.info(f"Bars fetched for {symbol} on retry {attempt+1}: {len(bars)} rows")
                 return bars

@@ -18,8 +18,8 @@ def _make_config():
     cfg.risk.MAX_CONCURRENT_POSITIONS = 5
     cfg.risk.ENABLE_SLIPPAGE = False
     cfg.risk.SLIPPAGE_GAP_THRESHOLD = 200.0
-    cfg.risk.ENTRY_SLIPPAGE_PCT = 0.001
-    cfg.risk.ENTRY_SLIPPAGE_HIGH_GAP_PCT = 0.002
+    cfg.risk.SLIPPAGE_ENTRY_PCT = 0.001
+    cfg.risk.SLIPPAGE_ENTRY_HIGH_GAP_PCT = 0.002
     cfg.risk.STOP_LOSS_PERCENT_OF_ACCOUNT = 2.0
     cfg.risk.MAX_POSITION_SIZE_PERCENT = 25.0
     cfg.session.PREMARKET_WARMUP_MINUTES = 30

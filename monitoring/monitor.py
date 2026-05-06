@@ -67,6 +67,21 @@ class Monitor:
                         metric_value REAL
                     )
                 ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS order_audit (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        event_type TEXT NOT NULL,
+                        symbol TEXT,
+                        order_id TEXT,
+                        status TEXT,
+                        qty INTEGER,
+                        price REAL,
+                        side TEXT,
+                        order_type TEXT,
+                        details TEXT
+                    )
+                ''')
                 conn.commit()
         except Exception as e:
             log_db_error(self.logger, "Error initializing database", e)
@@ -159,3 +174,50 @@ class Monitor:
                 conn.commit()
         except Exception as e:
             log_db_error(self.logger, "Error logging system event", e)
+
+    def audit_order_event(
+        self,
+        event_type: str,
+        symbol: str,
+        order_id: Optional[str] = None,
+        status: Optional[str] = None,
+        qty: Optional[int] = None,
+        price: Optional[float] = None,
+        side: Optional[str] = None,
+        order_type: Optional[str] = None,
+        details: Optional[Dict] = None,
+    ):
+        """
+        Persist a single order lifecycle event to the order_audit table.
+
+        This creates a durable audit trail for every order attempt, fill,
+        cancellation, and rejection — essential for reconciling broker records
+        and debugging live trading gaps.
+
+        Args:
+            event_type:  Short label such as 'ENTRY_ATTEMPT', 'ENTRY_FILLED',
+                         'EXIT_FILLED', 'STOP_PLACED', 'ORDER_REJECTED'.
+            symbol:      Ticker symbol.
+            order_id:    Broker order ID (may be None on submission failure).
+            status:      Broker-reported order status string.
+            qty:         Number of shares.
+            price:       Fill price or limit price, depending on event.
+            side:        'buy' or 'sell'.
+            order_type:  'market', 'limit', 'stop', etc.
+            details:     Arbitrary JSON-serialisable dict for extra context.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    '''INSERT INTO order_audit
+                           (event_type, symbol, order_id, status, qty, price,
+                            side, order_type, details)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (
+                        event_type, symbol, order_id, status, qty, price,
+                        side, order_type,
+                        json.dumps(details) if details else None,
+                    ),
+                )
+        except Exception as e:
+            log_db_error(self.logger, "Error writing order audit event", e)

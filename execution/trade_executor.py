@@ -91,6 +91,25 @@ class TradeExecutor:
             **kwargs,
         )
 
+    def _emit_order_audit(self, event: str, symbol: str, order=None, **extra) -> None:
+        """
+        Emit a structured [ORDER_AUDIT] log line at every order lifecycle point.
+
+        Lines are captured by the file handler in setup_logging and can be
+        parsed post-session for regulatory review or debugging.  No DB
+        connection is required here — use Monitor.audit_order_event() to also
+        persist events to SQLite when a Monitor instance is available.
+        """
+        order_id = getattr(order, "id", None) if order else None
+        status   = getattr(order, "status", None) if order else None
+        price    = getattr(order, "filled_avg_price", None) if order else None
+        qty      = getattr(order, "qty", None) if order else None
+        extra_str = " ".join(f"{k}={v}" for k, v in extra.items()) if extra else ""
+        self.logger.info(
+            "[ORDER_AUDIT] event=%s symbol=%s order_id=%s status=%s qty=%s price=%s %s",
+            event, symbol, order_id, status, qty, price, extra_str,
+        )
+
     # ------------------------------------------------------------------
     # All existing call sites: replace place_order(self.api, self.logger, ...)
     #                          with     self._place(...)
@@ -137,7 +156,6 @@ class TradeExecutor:
                 return {'success': False, 'reason': risk_check['reason']}
 
             position_size = risk_check['position_size']
-            slippage = self.config.risk.ENTRY_SLIPPAGE_PCT  # use config, not magic number
 
             # Live only: price limit slightly above ask to ensure fill urgency.
             # This is NOT slippage simulation — it is limit order aggressiveness.
@@ -148,6 +166,7 @@ class TradeExecutor:
                 type='limit', time_in_force='ioc',
                 limit_price=round(entry_price * (1 + aggression), 2),
             )
+            self._emit_order_audit("ENTRY_ATTEMPT_1", symbol, entry_order, order_type="limit_ioc")
 
             if not entry_order or entry_order.status != 'filled':
                 if entry_order and entry_order.status not in ('canceled', 'expired', 'rejected'):
@@ -167,9 +186,11 @@ class TradeExecutor:
                     type=order_type, time_in_force='day',
                     limit_price=round(entry_price * (1 + aggression2), 2) if order_type == 'limit' else None,
                 )
+                self._emit_order_audit("ENTRY_ATTEMPT_2", symbol, entry_order, order_type=order_type)
 
             if entry_order and entry_order.status == 'filled':
                 filled_price = float(entry_order.filled_avg_price)
+                self._emit_order_audit("ENTRY_FILLED", symbol, entry_order, filled_price=filled_price)
                 stop_order = self._place(
                     symbol=symbol, qty=position_size, side='sell',
                     type='stop', time_in_force='gtc', stop_price=stop_price,
@@ -256,6 +277,7 @@ class TradeExecutor:
             
             if exit_order and exit_order.status == 'filled':
                 exit_price = float(exit_order.filled_avg_price)
+                self._emit_order_audit("EXIT_FILLED", symbol, exit_order, reason=reason)
                 pnl = (exit_price - trade['entry_price']) * position_size
                 pnl_pct = ((exit_price - trade['entry_price']) / trade['entry_price']) * 100
                 

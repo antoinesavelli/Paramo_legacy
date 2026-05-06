@@ -143,7 +143,7 @@ def _calculate_gate_impact_matrix(diag_df: pd.DataFrame) -> pd.DataFrame:
         steps_match = row.get('step_up_steps', 0) >= winner_profile['min_steps']
         retention_match = row.get('step_up_retention', 0) >= winner_profile['min_retention']
         angle = row.get('parabolic_angle', 0)
-        angle_match = angle < 0  # Negative angles more common in winners
+        angle_match = angle is not None and angle < 0  # Negative angles more common in winners
         
         # At least 3 out of 4 criteria
         matches = sum([score_match, steps_match, retention_match, angle_match])
@@ -230,10 +230,10 @@ def _identify_false_negative_signatures(diag_df: pd.DataFrame) -> pd.DataFrame:
     if not false_negatives.empty:
         false_negatives = false_negatives.copy()
         false_negatives['fn_signature'] = false_negatives.apply(
-            lambda row: f"score={row.get('pattern_strength', 0):.1f}_"
-                       f"angle={row.get('parabolic_angle', 0):.1f}_"
-                       f"steps={row.get('step_up_steps', 0)}_"
-                       f"retention={row.get('step_up_retention', 0):.1f}",
+            lambda row: f"score={row.get('pattern_strength') or 0:.1f}_"
+                       f"angle={row.get('parabolic_angle') or 0:.1f}_"
+                       f"steps={row.get('step_up_steps') or 0}_"
+                       f"retention={row.get('step_up_retention') or 0:.1f}",
             axis=1
         )
     
