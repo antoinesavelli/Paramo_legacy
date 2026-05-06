@@ -1,5 +1,5 @@
 ﻿# =====================================================
-# backtester.py - Backtesting Logic for Intraday Trading
+# strategy/backtester.py - Backtesting Logic for Intraday Trading
 # =====================================================
 
 from datetime import datetime, timedelta
@@ -14,8 +14,8 @@ from utils.logging import get_logger
 from utils.progress import BacktestProgressTracker
 from data_handler.local import LocalDataHandler
 from strategy.pattern_analyzer import PatternAnalyzer
-from backtester.trade_simulator import TradeSimulator
-from utils.reporting import compute_statistics
+from execution.trade_simulator import TradeSimulator
+from monitoring.reporting import compute_statistics
 from news.backtest import NewsIntegrationBacktest
 from market_context.backtest import BacktestMarketContext
 from screener.backtest import BacktestScreener, CandidateSignal
@@ -614,7 +614,7 @@ class Backtester:
         # NOTE: NEW: Export daily performance CSV
         self.logger.info("Generating daily performance CSV...")
         try:
-            from utils.reporting import generate_daily_performance_csv
+            from monitoring.reporting import generate_daily_performance_csv
             
             daily_perf_fp = self.reports_dir / "daily_performance.csv"
             generate_daily_performance_csv(

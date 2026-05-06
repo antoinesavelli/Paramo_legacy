@@ -8,7 +8,7 @@ from datetime import datetime
 from config import TradingConfig
 from typing import Dict, Optional, List
 from utils.logging import get_logger
-from utils.reporting import compute_statistics
+from monitoring.reporting import compute_statistics
 
 def log_db_error(logger, msg, exc):
     logger.error("%s: %s", msg, exc)

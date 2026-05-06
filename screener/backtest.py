@@ -13,13 +13,19 @@ from utils.logging import get_logger
 from strategy.pattern_analyzer import PatternAnalyzer
 from news.backtest import NewsIntegrationBacktest
 from screener.core import UnifiedScreener, CandidateSignal
+from data_handler.base import DataHandler  # ADD
 
 
 class BacktestScreener:
     """Backtest screener using unified logic."""
     
-    def __init__(self, config, data_handler, pattern_analyzer: PatternAnalyzer, 
-                 news_integration: Optional[NewsIntegrationBacktest] = None):
+    def __init__(
+        self,
+        config,
+        data_handler: DataHandler,          # ← was untyped
+        pattern_analyzer: PatternAnalyzer,
+        news_integration: Optional[NewsIntegrationBacktest] = None,
+    ):
         self.config = config
         self.data = data_handler
         self.logger = get_logger(__name__, component="bt_screener")

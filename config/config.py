@@ -167,7 +167,7 @@ class RiskConfig:
     MAX_DRAWDOWN_PERCENT: float = 20.0
     MAX_PORTFOLIO_HEAT_PERCENT: float = 6.0
 
-    # Slippage simulation (backtest only)
+    # Slippage simulation (backtest only) — penalizes fills vs ideal bar price
     ENABLE_SLIPPAGE: bool = False
     SLIPPAGE_WINNER_MULTIPLIER: float = 0.98
     SLIPPAGE_LOSER_MULTIPLIER: float = 1.06
@@ -175,14 +175,16 @@ class RiskConfig:
     SLIPPAGE_STOP_NORMAL_PCT: float = 0.08
     SLIPPAGE_GAP_THRESHOLD: float = 200.0
 
-    # Re-entry: allow a second entry on the same stock after the initial position closes.
+    # Re-entry
     ENABLE_REENTRY: bool = False
     MAX_REENTRIES_PER_STOCK: int = 1
     REENTRY_COOLDOWN_MINUTES: int = 30
 
-    # Enhanced slippage for entry execution
-    ENTRY_SLIPPAGE_PCT: float = 0.005
-    ENTRY_SLIPPAGE_HIGH_GAP_PCT: float = 0.015
+    # Live order aggressiveness — how far above ask to set limit price
+    # to ensure a fill on a fast-moving stock. Not slippage simulation.
+    # Only used by TradeExecutor (live). TradeSimulator does not use these.
+    LIMIT_ORDER_AGGRESSION_PCT: float = 0.005        # was ENTRY_SLIPPAGE_PCT
+    LIMIT_ORDER_HIGH_GAP_AGGRESSION_PCT: float = 0.015  # was ENTRY_SLIPPAGE_HIGH_GAP_PCT
 
 @dataclass(frozen=True)
 class SystemConfig:
@@ -208,6 +210,12 @@ class SystemConfig:
 
     # Override via: PARAMO__system__REPORTS_DIR=/absolute/path
     REPORTS_DIR: str = 'reports'
+
+    # Order fill polling — replaces the hard time.sleep(1) in place_order.
+    # Poll Alpaca every ORDER_POLL_INTERVAL_SECONDS until the order reaches
+    # a terminal state (filled/canceled/rejected/expired) or the timeout fires.
+    ORDER_POLL_INTERVAL_SECONDS: float = 0.2   # 200 ms between polls
+    ORDER_FILL_TIMEOUT_SECONDS: float = 5.0    # give up waiting after 5 s
 
 @dataclass(frozen=True)
 class MarketContextConfig:

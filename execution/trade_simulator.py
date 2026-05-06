@@ -10,7 +10,7 @@ from strategy.risk_manager import calc_position_size_percentage
 from market_context.scoring import position_size_adjustment_from_indicators
 from screener.backtest import CandidateSignal
 from utils.trade_metrics import TradeMetrics
-from backtester.exit_simulator import ExitSimulator
+from execution.exit_simulator import ExitSimulator
 
 
 class TradeSimulator:

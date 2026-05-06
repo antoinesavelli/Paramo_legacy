@@ -12,9 +12,11 @@ mechanics and can be reused across live trading and backtesting.
 Modules:
     pattern_analyzer: Pattern recognition and confluence scoring
     risk_manager: Position sizing and risk calculations
+    backtester: Backtest orchestration and diagnostics
 """
 
 from strategy.pattern_analyzer import PatternAnalyzer
+from strategy.backtester import Backtester
 
 # Import common risk management functions
 from strategy.risk_manager import (
@@ -26,9 +28,12 @@ from strategy.risk_manager import (
 __all__ = [
     # Pattern Analysis
     'PatternAnalyzer',
-    
+
     # Risk Management
     'calc_atr_stop',
     'calc_position_size_percentage',
     'calc_atr_trailing_stop',
+
+    # Backtesting
+    'Backtester',
 ]

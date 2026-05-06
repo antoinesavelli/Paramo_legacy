@@ -3,22 +3,65 @@
 # =====================================================
 
 import time
-import pandas as pd  # NOTE: ADDED: Missing import
+import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
-from config.config import TradingConfig  # NOTE: FIXED: Added .config
-from strategy.risk_manager import RiskManager, calc_atr   # add calc_atr import
+from config.config import TradingConfig
+from strategy.risk_manager import RiskManager, calc_atr
 from utils.logging import get_logger
 
-def place_order(api, logger, **kwargs):
-    """Helper to place an order and handle exceptions."""
+# Terminal order states — polling stops when any of these is reached.
+_TERMINAL_STATES = frozenset({"filled", "canceled", "expired", "rejected", "pending_cancel"})
+
+
+def place_order(api, logger, poll_interval: float = 0.2, timeout: float = 5.0, **kwargs):
+    """
+    Submit an order and poll until it reaches a terminal state.
+
+    Replaces the old time.sleep(1) with a bounded poll loop so we react
+    to fills as fast as Alpaca acknowledges them (~200 ms typical) while
+    still bounding the worst-case wait to `timeout` seconds.
+
+    Args:
+        api:           Alpaca REST client.
+        logger:        Bound logger for this call site.
+        poll_interval: Seconds between get_order() polls (default 0.2 s).
+        timeout:       Maximum seconds to wait before returning whatever
+                       state the order is in (default 5.0 s).
+        **kwargs:      Forwarded verbatim to api.submit_order().
+
+    Returns:
+        The most recent Order object, or None if submission itself failed.
+    """
     try:
         order = api.submit_order(**kwargs)
-        time.sleep(1)
-        return api.get_order(order.id)
     except Exception as e:
-        logger.error(f"Order placement failed: {e}")
+        logger.error("Order submission failed: %s", e)
         return None
+
+    deadline = time.monotonic() + timeout
+
+    while True:
+        try:
+            order = api.get_order(order.id)
+        except Exception as e:
+            logger.warning("get_order poll failed for %s: %s", order.id, e)
+            # Don't abort — a transient network hiccup shouldn't kill the order.
+            # Fall through to sleep and try again.
+
+        if order.status in _TERMINAL_STATES:
+            return order
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            logger.warning(
+                "Order %s timed out after %.1fs — status=%s symbol=%s",
+                order.id, timeout, order.status, kwargs.get("symbol", "?"),
+            )
+            return order  # Return as-is; caller checks .status
+
+        time.sleep(min(poll_interval, remaining))
+
 
 class TradeExecutor:
     """Handles order placement, execution, and re-entry management"""
@@ -34,6 +77,25 @@ class TradeExecutor:
         self.reentry_candidates = {}
         self.reentry_history = {}
 
+        # Pull poll settings once so every place_order call uses config values.
+        self._poll_interval = config.system.ORDER_POLL_INTERVAL_SECONDS
+        self._poll_timeout = config.system.ORDER_FILL_TIMEOUT_SECONDS
+
+    def _place(self, **kwargs):
+        """Internal shortcut — always uses config-driven poll settings."""
+        return place_order(
+            self.api,
+            self.logger,
+            poll_interval=self._poll_interval,
+            timeout=self._poll_timeout,
+            **kwargs,
+        )
+
+    # ------------------------------------------------------------------
+    # All existing call sites: replace place_order(self.api, self.logger, ...)
+    #                          with     self._place(...)
+    # ------------------------------------------------------------------
+
     def execute_entry(self, signal: Dict) -> Dict:
         """Execute entry order with market context-adjusted sizing"""
         try:
@@ -42,17 +104,15 @@ class TradeExecutor:
             stop_price = signal['stop_price']
             is_reentry = signal.get('is_reentry', False)
 
-            # Gate re-entry against config (applies to BOTH live and backtest)
             if is_reentry:
                 if not self.config.risk.ENABLE_REENTRY:
-                    self.logger.info(f"Re-entry blocked for {symbol}: ENABLE_REENTRY=False")
+                    self.logger.info("Re-entry blocked for %s: ENABLE_REENTRY=False", symbol)
                     return {'success': False, 'reason': 'reentry_disabled'}
                 reentry_count = self.reentry_history.get(symbol, 0)
                 if reentry_count >= self.config.risk.MAX_REENTRIES_PER_STOCK:
-                    self.logger.info(f"Re-entry blocked for {symbol}: max reentries reached ({reentry_count})")
+                    self.logger.info("Re-entry blocked for %s: max reentries reached (%d)", symbol, reentry_count)
                     return {'success': False, 'reason': 'max_reentries_reached'}
 
-            # Get market context adjustment
             market_adjustment = 1.0
             if self.market_context:
                 try:
@@ -60,46 +120,59 @@ class TradeExecutor:
                     env = self.market_context.market_indicators.get('trading_environment', 'neutral')
                     score = self.market_context.market_indicators.get('market_score', 50)
                     self.logger.info(
-                        f"Market context for {symbol}: env={env}, "
-                        f"score={score:.1f}, adjustment={market_adjustment:.2f}x"
+                        "Market context for %s: env=%s score=%.1f adjustment=%.2fx",
+                        symbol, env, score, market_adjustment,
                     )
                 except Exception as e:
-                    self.logger.warning(f"Failed to get market adjustment: {e}, using 1.0x")
-                    market_adjustment = 1.0
+                    self.logger.warning("Failed to get market adjustment: %s, using 1.0x", e)
 
-            self.logger.info(f"Entry requested for {symbol} reentry={is_reentry} entry={entry_price:.2f} stop={stop_price:.2f}")
-            
-            # Pass market adjustment to risk check
-            risk_check = self.risk_manager.check_entry_risk(symbol, entry_price, stop_price, market_adjustment)
-            
-            if not risk_check['approved']:
-                self.logger.warning(f"Entry rejected for {symbol}: {risk_check['reason']}")
-                return {'success': False, 'reason': risk_check['reason']}
-            position_size = risk_check['position_size']
-
-            entry_order = place_order(
-                self.api, self.logger,
-                symbol=symbol, qty=position_size, side='buy',
-                type='limit', time_in_force='ioc', limit_price=entry_price * 1.001
+            self.logger.info(
+                "Entry requested for %s reentry=%s entry=%.2f stop=%.2f",
+                symbol, is_reentry, entry_price, stop_price,
             )
+
+            risk_check = self.risk_manager.check_entry_risk(symbol, entry_price, stop_price, market_adjustment)
+            if not risk_check['approved']:
+                self.logger.warning("Entry rejected for %s: %s", symbol, risk_check['reason'])
+                return {'success': False, 'reason': risk_check['reason']}
+
+            position_size = risk_check['position_size']
+            slippage = self.config.risk.ENTRY_SLIPPAGE_PCT  # use config, not magic number
+
+            # Live only: price limit slightly above ask to ensure fill urgency.
+            # This is NOT slippage simulation — it is limit order aggressiveness.
+            aggression = self.config.risk.LIMIT_ORDER_AGGRESSION_PCT
+
+            entry_order = self._place(
+                symbol=symbol, qty=position_size, side='buy',
+                type='limit', time_in_force='ioc',
+                limit_price=round(entry_price * (1 + aggression), 2),
+            )
+
             if not entry_order or entry_order.status != 'filled':
-                try:
-                    self.api.cancel_order(entry_order.id)
-                except Exception:
-                    pass
+                if entry_order and entry_order.status not in ('canceled', 'expired', 'rejected'):
+                    try:
+                        self.api.cancel_order(entry_order.id)
+                    except Exception:
+                        pass
+
+                high_gap = signal.get('gap_percent', 0) >= self.config.risk.SLIPPAGE_GAP_THRESHOLD
+                aggression2 = (
+                    self.config.risk.LIMIT_ORDER_HIGH_GAP_AGGRESSION_PCT
+                    if high_gap else aggression
+                )
                 order_type = 'market' if is_reentry else 'limit'
-                entry_order = place_order(
-                    self.api, self.logger,
+                entry_order = self._place(
                     symbol=symbol, qty=position_size, side='buy',
                     type=order_type, time_in_force='day',
-                    limit_price=entry_price * 1.002 if order_type == 'limit' else None
+                    limit_price=round(entry_price * (1 + aggression2), 2) if order_type == 'limit' else None,
                 )
+
             if entry_order and entry_order.status == 'filled':
                 filled_price = float(entry_order.filled_avg_price)
-                stop_order = place_order(
-                    self.api, self.logger,
+                stop_order = self._place(
                     symbol=symbol, qty=position_size, side='sell',
-                    type='stop', time_in_force='gtc', stop_price=stop_price
+                    type='stop', time_in_force='gtc', stop_price=stop_price,
                 )
                 self._track_new_position(symbol, filled_price, position_size, stop_price, stop_order, entry_order, is_reentry)
                 return {
@@ -108,9 +181,11 @@ class TradeExecutor:
                     'entry_price': filled_price,
                     'position_size': position_size,
                     'stop_price': stop_price,
-                    'is_reentry': is_reentry
+                    'is_reentry': is_reentry,
                 }
+
             return {'success': False, 'reason': f"Order not filled: {getattr(entry_order, 'status', 'unknown')}"}
+
         except Exception as e:
             self.logger.error("Error executing entry for %s: %s", signal['symbol'], e)
             return {'success': False, 'reason': str(e)}

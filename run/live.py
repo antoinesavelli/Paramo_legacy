@@ -6,8 +6,8 @@ import signal
 import sys
 import logging
 import argparse
-from core.trading_system import TradingSystem
-from utils.cli_common import add_logging_args, configure_logging
+from run.trading_system import TradingSystem
+from run.cli import add_logging_args, configure_logging
 from config.loader import build_config
 
 

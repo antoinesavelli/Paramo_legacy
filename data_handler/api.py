@@ -256,3 +256,13 @@ class APIDataHandler:
             self.logger.error(f"Unexpected error getting yfinance fundamentals for {symbol}: {e}")
         
         return None
+
+    # Add this method to APIDataHandler — it is the only gap vs the Protocol.
+    # LocalDataHandler already implements has_data_for_date natively.
+
+    def has_data_for_date(self, date_str: str) -> bool:
+        """
+        Live mode: data is always available for today (market hours permitting).
+        Returns True unconditionally — the live screener does not pre-filter by date.
+        """
+        return True
