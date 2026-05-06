@@ -233,7 +233,7 @@ def main():
             }
         }
     elif args.preset == 'confluence_9hour':
-        # ✅ Direct combinations (not a grid)
+        # NOTE: Direct combinations (not a grid)
         param_combinations = [
             {'pattern.CONFLUENCE_WEIGHT_STEP_UP': 0.5, 'pattern.CONFLUENCE_WEIGHT_PARABOLIC': 0.5, 'pattern.CONFLUENCE_WEIGHT_VOLUME': 0.0, 'pattern.CONFLUENCE_WEIGHT_BREAKOUT': 0.0, 'pattern.CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE': 0.0},
             {'pattern.CONFLUENCE_WEIGHT_STEP_UP': 0.5, 'pattern.CONFLUENCE_WEIGHT_PARABOLIC': 0.0, 'pattern.CONFLUENCE_WEIGHT_VOLUME': 0.5, 'pattern.CONFLUENCE_WEIGHT_BREAKOUT': 0.0, 'pattern.CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE': 0.0},

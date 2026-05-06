@@ -9,8 +9,10 @@ from typing import Dict, Optional
 from config.config import TradingConfig
 from utils.logging import get_logger
 
+_logger = get_logger(__name__)
+
 def log_api_error(logger, msg, exc):
-    logger.error(f"{msg}: {exc}")
+    logger.error("%s: %s", msg, exc)
 
 def get_account_info(api, logger):
     """Helper to get account info safely."""
@@ -63,7 +65,8 @@ def calc_atr(bars: pd.DataFrame, period: int = 14) -> float:
         atr = tr.ewm(alpha=1/period, adjust=False).mean().iloc[-1]
         
         return float(atr) if not pd.isna(atr) else 0.0
-    except Exception:
+    except Exception as e:
+        _logger.debug("calc_atr failed (period=%d, bars=%d): %s", period, len(bars) if bars is not None else 0, e)
         return 0.0
 
 
@@ -84,8 +87,8 @@ def calc_atr_stop(
             atr = calc_atr(bars, period=atr_period)
             if atr > 0:
                 return round(entry_price - atr_mult * atr, 4)
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.debug("calc_atr_stop failed (entry=%.4f): %s — using fallback", entry_price, e)
     return round(entry_price * (1.0 - fallback_pct), 4)
 
 
@@ -133,7 +136,11 @@ def calc_atr_trailing_stop(
         
         return round(trailing_stop, 4)
         
-    except Exception:
+    except Exception as e:
+        _logger.debug(
+            "calc_atr_trailing_stop failed (highest=%.4f): %s — using fallback",
+            highest_price, e
+        )
         # Emergency fallback
         return round(highest_price * (1.0 - min_stop_distance_pct), 4)
 
@@ -209,13 +216,16 @@ class RiskManager:
             # Check daily loss limit (percentage-based)
             max_daily_loss_dollars = equity * (self.config.risk.MAX_DAILY_LOSS_PERCENT / 100.0)
             if self.daily_pnl <= -max_daily_loss_dollars:
-                self.logger.warning(f"Entry blocked for {symbol}: Daily loss limit reached ({self.config.risk.MAX_DAILY_LOSS_PERCENT}% of account)")
+                self.logger.warning(
+                    "Entry blocked for %s: Daily loss limit reached (%.0f%% of account)",
+                    symbol, self.config.risk.MAX_DAILY_LOSS_PERCENT
+                )
                 return {'approved': False, 'reason': f'Daily loss limit reached ({self.config.risk.MAX_DAILY_LOSS_PERCENT}%)'}
             
             # Check max concurrent positions
             positions = get_positions(self.api, self.logger)
             if len(positions) >= self.config.risk.MAX_CONCURRENT_POSITIONS:
-                self.logger.warning(f"Entry blocked for {symbol}: Max concurrent positions reached")
+                self.logger.warning("Entry blocked for %s: Max concurrent positions reached", symbol)
                 return {'approved': False, 'reason': 'Maximum concurrent positions reached'}
             
             # Validate stop price
@@ -223,7 +233,7 @@ class RiskManager:
             if price_risk <= 0:
                 return {'approved': False, 'reason': 'Invalid stop price'}
             
-                        # Calculate position size with market context adjustment
+            # Calculate position size with market context adjustment
             position_size = calc_position_size_percentage(
                 entry=entry_price,
                 stop=stop_price,
@@ -233,17 +243,18 @@ class RiskManager:
                 market_adjustment=market_adjustment
             )
 
-            # ✅ FIX 5: Explicit warning when position size collapses to zero so the
-            # cause (tight stop, low equity, or aggressive market adjustment) is visible.
             if position_size == 0:
                 risk_budget = equity * (self.config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT / 100.0) * market_adjustment
                 risk_per_share = entry_price - stop_price
                 self.logger.warning(
-                    f"Entry blocked for {symbol}: position size calculated as 0 | "
-                    f"equity=${equity:.2f}, "
-                    f"risk_budget=${risk_budget:.2f} ({self.config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT}% * {market_adjustment:.2f}x adj), "
-                    f"risk_per_share=${risk_per_share:.4f} (entry=${entry_price:.2f} - stop=${stop_price:.2f}), "
-                    f"max_position_value=${equity * (self.config.risk.MAX_POSITION_SIZE_PERCENT / 100.0) * market_adjustment:.2f}"
+                    "Entry blocked for %s: position size calculated as 0 | "
+                    "equity=$%.2f, risk_budget=$%.2f (%.0f%% * %.2fx adj), "
+                    "risk_per_share=$%.4f (entry=$%.2f - stop=$%.2f), "
+                    "max_position_value=$%.2f",
+                    symbol, equity,
+                    risk_budget, self.config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT, market_adjustment,
+                    risk_per_share, entry_price, stop_price,
+                    equity * (self.config.risk.MAX_POSITION_SIZE_PERCENT / 100.0) * market_adjustment
                 )
                 return {'approved': False, 'reason': 'Position size calculated as zero (insufficient equity or stop too tight)'}
             
@@ -252,7 +263,7 @@ class RiskManager:
             if required_capital > buying_power:
                 position_size = int(buying_power / entry_price)
                 if position_size < 1:
-                    self.logger.warning(f"Entry blocked for {symbol}: Insufficient buying power")
+                    self.logger.warning("Entry blocked for %s: Insufficient buying power", symbol)
                     return {'approved': False, 'reason': 'Insufficient buying power'}
             
             # Check drawdown
@@ -260,17 +271,18 @@ class RiskManager:
                 self.peak_balance = equity
             current_drawdown = ((self.peak_balance - equity) / self.peak_balance * 100) if self.peak_balance > 0 else 0
             if current_drawdown >= self.config.risk.MAX_DRAWDOWN_PERCENT:
-                self.logger.warning(f"Entry blocked for {symbol}: Max drawdown reached ({current_drawdown:.2f}%)")
+                self.logger.warning(
+                    "Entry blocked for %s: Max drawdown reached (%.2f%%)",
+                    symbol, current_drawdown
+                )
                 return {'approved': False, 'reason': f'Maximum drawdown reached ({current_drawdown:.2f}%)'}
             
             risk_dollars = position_size * price_risk
             risk_pct_of_account = (risk_dollars / equity) * 100
             
-            # Enhanced logging with market context
             self.logger.info(
-                f"Entry approved {symbol}: size={position_size}, "
-                f"risk=${risk_dollars:.2f} ({risk_pct_of_account:.2f}% of account), "
-                f"stop={stop_price:.2f}, market_adj={market_adjustment:.2f}x"
+                "Entry approved %s: size=%d, risk=$%.2f (%.2f%% of account), stop=%.2f, market_adj=%.2fx",
+                symbol, position_size, risk_dollars, risk_pct_of_account, stop_price, market_adjustment
             )
             return {
                 'approved': True,
@@ -298,7 +310,10 @@ class RiskManager:
             stop_price = max(atr_stop, technical_stop)
             stop_price = round(stop_price, 2)
             
-            self.logger.info(f"Stop calculated {symbol}: entry={entry_price:.2f} atr_stop={atr_stop:.2f} tech_stop={technical_stop:.2f} final={stop_price:.2f}")
+            self.logger.info(
+                "Stop calculated %s: entry=%.2f atr_stop=%.2f tech_stop=%.2f final=%.2f",
+                symbol, entry_price, atr_stop, technical_stop, stop_price
+            )
             return stop_price
         except Exception as e:
             log_api_error(self.logger, "Error calculating stop loss", e)
@@ -356,10 +371,8 @@ class RiskManager:
                 new_stop = max(new_stop, entry_price + 0.01)
                 
                 self.logger.info(
-                    f"ATR trailing stop update {symbol}: "
-                    f"highest=${highest_price:.2f}, "
-                    f"old_stop=${current_stop:.2f}, "
-                    f"new_stop=${new_stop:.2f}"
+                    "ATR trailing stop update %s: highest=$%.2f, old_stop=$%.2f, new_stop=$%.2f",
+                    symbol, highest_price, current_stop, new_stop
                 )
                 return round(new_stop, 2)
             
@@ -403,9 +416,12 @@ class RiskManager:
             loss_pct_used = (abs(self.daily_pnl) / max_daily_loss_dollars * 100) if self.daily_pnl < 0 else 0
             
             if self.daily_pnl <= -max_daily_loss_dollars * 0.8:
-                self.logger.warning(f"Approaching daily loss limit: ${self.daily_pnl:.2f} ({loss_pct_used:.1f}% of {self.config.risk.MAX_DAILY_LOSS_PERCENT}% limit)")
+                self.logger.warning(
+                    "Approaching daily loss limit: $%.2f (%.1f%% of %.0f%% limit)",
+                    self.daily_pnl, loss_pct_used, self.config.risk.MAX_DAILY_LOSS_PERCENT
+                )
             else:
-                self.logger.debug(f"Daily PnL updated: ${self.daily_pnl:.2f}")
+                self.logger.debug("Daily PnL updated: $%.2f", self.daily_pnl)
         except Exception as e:
             log_api_error(self.logger, "Error updating daily P&L", e)
 
@@ -423,9 +439,9 @@ class RiskManager:
                         type='market',
                         time_in_force='day'
                     )
-                    self.logger.info(f"Emergency liquidation order placed for {position.symbol}")
+                    self.logger.info("Emergency liquidation order placed for %s", position.symbol)
                 except Exception as e:
-                    log_api_error(self.logger, f"Failed to liquidate {position.symbol}", e)
+                    log_api_error(self.logger, "Failed to liquidate " + position.symbol, e)
             try:
                 self.api.cancel_all_orders()
             except Exception as e:

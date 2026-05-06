@@ -173,7 +173,7 @@ def compute_statistics(
     # Exit reasons breakdown
     exit_reasons = _by_exit_reason(trades)
 
-    # ✅ NEW: MAE/MFE statistics (risk efficiency metrics)
+    # NOTE: NEW: MAE/MFE statistics (risk efficiency metrics)
     mae_values = [t.get('mae', 0) for t in trades if 'mae' in t]
     mfe_values = [t.get('mfe', 0) for t in trades if 'mfe' in t]
     

@@ -84,8 +84,8 @@ class DualPatternAnalyzer:
         if mode == "claude_only":
             if not claude_allowed:
                 self.logger.info(
-                    f"{symbol}: Claude skipped (backtest guard). "
-                    "Falling back to hard-coded."
+                    "%s: Claude skipped (backtest guard). Falling back to hard-coded.",
+                    symbol
                 )
                 return self._hard_coded.analyze_pattern(*req)
             return self._run_claude_with_fallback(req, fallback_on_error=True)
@@ -95,7 +95,8 @@ class DualPatternAnalyzer:
 
         if not claude_allowed:
             self.logger.debug(
-                f"{symbol}: Claude skipped (backtest guard). Using hard-coded result."
+                "%s: Claude skipped (backtest guard). Using hard-coded result.",
+                symbol
             )
             hc_result.setdefault("meta", {})["claude_skipped"] = True
             return hc_result
@@ -129,14 +130,15 @@ class DualPatternAnalyzer:
         try:
             return self._claude.analyze_pattern(*req)
         except ClaudeAnalyzerError as exc:
-            self.logger.warning(
-                f"{req.symbol}: ClaudeAnalyzerError — {exc}. "
-                + ("Falling back to hard-coded result." if fallback_on_error else "")
-            )
             if fallback_on_error:
+                self.logger.warning(
+                    "%s: ClaudeAnalyzerError — %s. Falling back to hard-coded result.",
+                    req.symbol, exc
+                )
                 result = self._hard_coded.analyze_pattern(*req)
                 result.setdefault("meta", {})["claude_fallback"] = str(exc)
                 return result
+            self.logger.warning("%s: ClaudeAnalyzerError — %s.", req.symbol, exc)
             return None
 
     def _apply_consensus(self, hc: Dict, claude: Dict, symbol: str) -> Dict:
@@ -149,11 +151,18 @@ class DualPatternAnalyzer:
             winner["valid"] = hc["valid"] and claude["valid"]
 
         elif consensus == "or":
-            if hc["valid"] or claude["valid"]:
+            hc_valid = hc["valid"]
+            claude_valid = claude["valid"]
+            if hc_valid and claude_valid:
+                # Both valid — prefer higher pattern strength
                 winner = dict(
                     hc if hc.get("pattern_strength", 0) >= claude.get("pattern_strength", 0)
                     else claude
                 )
+            elif hc_valid:
+                winner = dict(hc)
+            elif claude_valid:
+                winner = dict(claude)
             else:
                 winner = dict(hc)
 
@@ -165,7 +174,7 @@ class DualPatternAnalyzer:
 
         winner["meta"] = meta
         self.logger.info(
-            f"{symbol}: consensus={consensus} → valid={winner['valid']} "
-            f"hc_valid={hc['valid']} claude_valid={claude['valid']}"
+            "%s: consensus=%s → valid=%s hc_valid=%s claude_valid=%s",
+            symbol, consensus, winner["valid"], hc["valid"], claude["valid"]
         )
         return winner

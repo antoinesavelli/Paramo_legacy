@@ -26,7 +26,7 @@ class LiveRelativeVolumeCalculator:
         
         for symbol in symbols:
             try:
-                # ✅ Get historical daily bars from API (e.g., Alpaca)
+                # NOTE: Get historical daily bars from API (e.g., Alpaca)
                 daily_bars = self.data.get_bars(
                     symbol=symbol,
                     timeframe='1Day',
@@ -34,15 +34,15 @@ class LiveRelativeVolumeCalculator:
                 )
                 
                 if daily_bars is None or daily_bars.empty or len(daily_bars) < 2:
-                    self.logger.debug(f"{symbol}: Insufficient daily bar history")
+                    self.logger.debug("%s: Insufficient daily bar history", symbol)
                     continue
                 
-                # ✅ Get current quote for real-time volume
+                # NOTE: Get current quote for real-time volume
                 quotes = self.data.get_quote_data([symbol]) or {}
                 quote = quotes.get(symbol)
                 
                 if not quote:
-                    self.logger.debug(f"{symbol}: No quote data available")
+                    self.logger.debug("%s: No quote data available", symbol)
                     continue
                 
                 current_volume = quote.get('volume', 0)
@@ -55,7 +55,7 @@ class LiveRelativeVolumeCalculator:
                 valid_vols = historical_volumes[historical_volumes > 0]
                 
                 if len(valid_vols) < 5:
-                    self.logger.debug(f"{symbol}: Insufficient valid volume days ({len(valid_vols)}<5)")
+                    self.logger.debug("%s: Insufficient valid volume days (%d<5)", symbol, len(valid_vols))
                     continue
                 
                 avg_volume = valid_vols.mean()
@@ -67,12 +67,12 @@ class LiveRelativeVolumeCalculator:
                 rel_vols[symbol] = rel_vol
                 
                 self.logger.debug(
-                    f"{symbol}: RelVol={rel_vol:.2f}x "
-                    f"(current={current_volume:,}, avg={avg_volume:,.0f})"
+                    "%s: RelVol=%.2fx (current=%d, avg=%.0f)",
+                    symbol, rel_vol, current_volume, avg_volume
                 )
                 
             except Exception as e:
-                self.logger.debug(f"Error calculating live RVOL for {symbol}: {e}")
+                self.logger.debug("Error calculating live RVOL for %s: %s", symbol, e)
                 continue
         
         return rel_vols
@@ -94,7 +94,7 @@ class BacktestRelativeVolumeCalculator:
         """
         rel_vols = {}
         
-        # ✅ Calculate screening time (warmup period after session start)
+        # NOTE: Calculate screening time (warmup period after session start)
         session_cfg = self.config.session
         if session_cfg.PREMARKET_ENABLED:
             pm_start = datetime.strptime(session_cfg.PREMARKET_START_ET, "%H:%M").time()
@@ -114,20 +114,20 @@ class BacktestRelativeVolumeCalculator:
         
         for symbol in symbols:
             try:
-                # ✅ Use pre-computed average from aggregates (instant!)
+                # NOTE: Use pre-computed average from aggregates (instant!)
                 daily_stats = self.data.get_daily_stats(symbol, day)
                 
                 if daily_stats is None:
                     continue
                 
-                # ✅ Get pre-computed average volume
+                # NOTE: Get pre-computed average volume
                 if use_10d and 'avg_volume_10d' in daily_stats:
                     avg_volume = daily_stats['avg_volume_10d']
                 elif 'avg_volume_20d' in daily_stats:
                     avg_volume = daily_stats['avg_volume_20d']
                 else:
-                    # ✅ Fallback: Compute manually if aggregates don't have it yet
-                    self.logger.debug(f"{symbol}: Aggregate missing avg_volume, using fallback")
+                    # NOTE: Fallback: Compute manually if aggregates don't have it yet
+                    self.logger.debug("%s: Aggregate missing avg_volume, using fallback", symbol)
                     end_date = day - timedelta(days=1)
                     start_date = end_date - timedelta(days=lookback + 10)
                     daily_bars = self.data.get_daily_volume_history(symbol, start_date, end_date, bars=lookback)
@@ -145,7 +145,7 @@ class BacktestRelativeVolumeCalculator:
                 if avg_volume <= 0:
                     continue
                 
-                # ✅ Get current day's volume ONLY UP TO SCREENING TIME (no lookahead!)
+                # NOTE: Get current day's volume ONLY UP TO SCREENING TIME (no lookahead!)
                 current_day_bars = self.data.get_intraday_bars(
                     symbol, 
                     start=day,
@@ -160,13 +160,12 @@ class BacktestRelativeVolumeCalculator:
                 rel_vols[symbol] = rel_vol
                 
                 self.logger.debug(
-                    f"{symbol}: RelVol={rel_vol:.2f}x "
-                    f"(current @{screening_time_et.strftime('%H:%M')}={current_volume:,}, "
-                    f"avg={avg_volume:,.0f})"
+                    "%s: RelVol=%.2fx (current @%s=%d, avg=%.0f)",
+                    symbol, rel_vol, screening_time_et.strftime('%H:%M'), current_volume, avg_volume
                 )
                 
             except Exception as e:
-                self.logger.debug(f"Error calculating backtest RVOL for {symbol}: {e}")
+                self.logger.debug("Error calculating backtest RVOL for %s: %s", symbol, e)
                 continue
         
         return rel_vols

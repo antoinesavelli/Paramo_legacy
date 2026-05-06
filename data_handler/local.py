@@ -33,7 +33,7 @@ logger = logging.getLogger("data_handler.local")
 class LocalDataHandler:
     """Handles local market data for backtesting with hierarchical YYYY/MM/DD structure."""
 
-    # ✅ OPTIMIZED: Define essential columns only
+    # NOTE: OPTIMIZED: Define essential columns only
     REQUIRED_COLUMNS = [
         "symbol", "timestamp", "open", "high", "low", "close", "volume"
     ]
@@ -51,7 +51,7 @@ class LocalDataHandler:
         self.config = config
         self.data_dir = Path(data_dir)
         
-        # ✅ Day cache - keep only 2 days max for memory efficiency
+        # NOTE: Day cache - keep only 2 days max for memory efficiency
         self._day_cache = OrderedDict()
         self._day_cache_limit = getattr(
             self.config.system, 
@@ -119,7 +119,7 @@ class LocalDataHandler:
             Dict of {date_str: {symbol1, symbol2, ...}}
         """
         index = {}
-        # ✅ NEW FORMAT: YYYY-MM-DD.parquet
+        # NOTE: NEW FORMAT: YYYY-MM-DD.parquet
         pattern = re.compile(r"^(\d{4}-\d{2}-\d{2})\.parquet$", re.IGNORECASE)
         
         total_files = 0
@@ -146,7 +146,7 @@ class LocalDataHandler:
                             date_str = match.group(1)  # Already in YYYY-MM-DD format
                             
                             try:
-                                # ✅ OPTIMIZED: Only load symbol column for indexing
+                                # NOTE: OPTIMIZED: Only load symbol column for indexing
                                 df = pd.read_parquet(file, columns=['symbol'])
                                 symbols = set(df['symbol'].dropna().unique())
                                 symbols = {s for s in symbols if s is not None and isinstance(s, str)}
@@ -191,7 +191,7 @@ class LocalDataHandler:
             date_str: Date in YYYY-MM-DD format
             columns: Optional list of columns to load (None = load all)
         """
-        # ✅ OPTIMIZATION: Cache key includes columns to avoid loading unnecessary data
+        # NOTE: OPTIMIZATION: Cache key includes columns to avoid loading unnecessary data
         cache_key = date_str
         
         # Check cache first
@@ -217,7 +217,7 @@ class LocalDataHandler:
             date_obj = pd.to_datetime(date_str)
             year = str(date_obj.year)
             month = f"{date_obj.month:02d}"
-            # ✅ NEW FORMAT: Use date_str directly (already YYYY-MM-DD)
+            # NOTE: NEW FORMAT: Use date_str directly (already YYYY-MM-DD)
             filename = f"{date_str}.parquet"
             filepath = self.data_dir / year / month / filename
             
@@ -225,13 +225,13 @@ class LocalDataHandler:
                 self._missing_days_cache.add(date_str)
                 return pd.DataFrame()
             
-            # ✅ OPTIMIZED: Load only requested columns
+            # NOTE: OPTIMIZED: Load only requested columns
             df = self._read_parquet_safe(filepath, columns=columns)
             
             if not df.empty:
                 df = self._normalize_columns(df)
                 
-                # ✅ LRU cache eviction with explicit cleanup
+                # NOTE: LRU cache eviction with explicit cleanup
                 if len(self._day_cache) >= self._day_cache_limit:
                     evicted_key, evicted_df = self._day_cache.popitem(last=False)
                     rows_freed = len(evicted_df)
@@ -313,7 +313,7 @@ class LocalDataHandler:
         if start is None or end is None:
             return pd.DataFrame()
         
-        # ✅ OPTIMIZED: Define columns needed for bars
+        # NOTE: OPTIMIZED: Define columns needed for bars
         needed_cols = ['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
         
         cur = pd.Timestamp(start).normalize()
@@ -368,7 +368,7 @@ class LocalDataHandler:
 
         try:
             if uni_path.exists():
-                # ✅ OPTIMIZED: Only load symbol column
+                # NOTE: OPTIMIZED: Only load symbol column
                 uni = pd.read_parquet(uni_path, columns=['symbol'])
                 uni = self._normalize_columns(uni)
                 if not uni.empty:

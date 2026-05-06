@@ -31,21 +31,20 @@ class BacktestMarketContext:
         self._vix = self._load_csv("VIX.csv", has_commas_in_price=False, treat_dash_volume_as_nan=True)
         self._rut = self._load_csv("RUT.csv", has_commas_in_price=True)
         if self._spy.empty or self._vix.empty:
-            self.logger.warning(f"Market context CSVs not fully available at {dirpath}")
+            self.logger.warning("Market context CSVs not fully available at %s", dirpath)
 
     def _load_csv(self, name: str, has_commas_in_price: bool, treat_dash_volume_as_nan: bool = False) -> pd.DataFrame:
         fp = os.path.join(self.dirpath, name)
         try:
             df = pd.read_csv(fp, encoding="utf-8")
         except Exception as e:
-            self.logger.error(f"Failed to read {fp}: {e}")
+            self.logger.error("Failed to read %s: %s", fp, e)
             return pd.DataFrame()
 
-        # ✅ Volume is optional (VIX doesn't have volume)
         required = ['Date', 'Open', 'High', 'Low', 'Close', 'Adj Close']
         missing = [c for c in required if c not in df.columns]
         if missing:
-            self.logger.error(f"{name} missing required columns: {missing}")
+            self.logger.error("%s missing required columns: %s", name, missing)
             return pd.DataFrame()
 
         def _clean_num(s: pd.Series, allow_commas: bool) -> pd.Series:
@@ -58,7 +57,7 @@ class BacktestMarketContext:
         for col in price_cols:
             df[col] = _clean_num(df[col], allow_commas=has_commas_in_price)
 
-        # ✅ Handle Volume if present (VIX won't have it)
+        # NOTE: Handle Volume if present (VIX won't have it)
         if 'Volume' in df.columns:
             vol = df['Volume'].astype(str).str.replace(",", "", regex=False).str.strip()
             if treat_dash_volume_as_nan:
@@ -67,11 +66,11 @@ class BacktestMarketContext:
         else:
             df['Volume'] = 0  # VIX has no volume
 
-        # ✅ Parse dates with correct format (MM/DD/YY)
+        # NOTE: Parse dates with correct format (MM/DD/YY)
         try:
             df['date'] = pd.to_datetime(df['Date'], format="%m/%d/%y").dt.normalize()
         except Exception:
-            self.logger.warning(f"Date format inference for {name}")
+            self.logger.warning("Date format inference for %s", name)
             import warnings
             with warnings.catch_warnings():
                 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
@@ -111,7 +110,7 @@ class BacktestMarketContext:
             self.market_indicators = context
             return context
         except Exception as e:
-            self.logger.error(f"Error updating backtest market context: {e}")
+            self.logger.error("Error updating backtest market context: %s", e)
             return self.market_indicators
 
     def _spy_trend(self, spy: pd.DataFrame) -> Dict:

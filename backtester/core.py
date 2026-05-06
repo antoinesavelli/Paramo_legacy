@@ -123,7 +123,7 @@ def _calculate_gate_impact_matrix(diag_df: pd.DataFrame) -> pd.DataFrame:
     # Identify winners and losers
     winners = diag_df[(diag_df['phase'] == 'exited') & (diag_df.get('pnl', 0) > 0)]
     losers = diag_df[(diag_df['phase'] == 'exited') & (diag_df.get('pnl', 0) <= 0)]
-    # ✅ FIX: Use .copy() to avoid SettingWithCopyWarning
+    # NOTE: FIX: Use .copy() to avoid SettingWithCopyWarning
     rejected = diag_df[diag_df['phase'] == 'reject'].copy()
     
     if rejected.empty:
@@ -160,7 +160,7 @@ def _calculate_gate_impact_matrix(diag_df: pd.DataFrame) -> pd.DataFrame:
         return matches >= 2
     
     # Extract rejection reasons (handle complex reasons like "pattern_invalid:low_score,retention")
-    # ✅ Now safe because rejected is a copy
+    # NOTE: Now safe because rejected is a copy
     rejected['gate'] = rejected['reason'].apply(lambda x: x.split(':')[0] if isinstance(x, str) else 'unknown')
     
     # Calculate gate impact
@@ -289,7 +289,7 @@ class Backtester:
         self.logger = get_logger(__name__, component="intraday_bt")
         self.daily_pnl = 0.0
         
-        # ✅ Store reports directory (fallback to current directory)
+        # NOTE: Store reports directory (fallback to current directory)
         from pathlib import Path
         self.reports_dir = reports_dir if reports_dir else Path.cwd()
         
@@ -298,14 +298,14 @@ class Backtester:
         )
         self._day_sentiment: Optional[float] = None
         
-        # ✅ Initialize market context for backtest
+        # NOTE: Initialize market context for backtest
         self.market_context_bt = BacktestMarketContext(config)
         
         self.bt_screener = BacktestScreener(
             config, data_handler, self.pattern_analyzer, self.news_integration
         )
         
-        # ✅ Pass market context to trade simulator
+        # NOTE: Pass market context to trade simulator
         self.trade_simulator = TradeSimulator(
             config, 
             data_handler, 
@@ -313,7 +313,7 @@ class Backtester:
             market_context=self.market_context_bt
         )
         
-        # ✅ NEW: Progress tracker (initialized in run_backtest)
+        # NOTE: NEW: Progress tracker (initialized in run_backtest)
         self.progress: Optional[BacktestProgressTracker] = None
 
     def run_backtest(
@@ -342,7 +342,7 @@ class Backtester:
         
         total_days = len(all_days)
         
-        # ✅ Initialize progress tracker
+        # NOTE: Initialize progress tracker
         self.progress = BacktestProgressTracker(total_days, start_date, end_date)
         print()  # Add blank line before progress bar
         print()  # Reserve space for progress display
@@ -353,7 +353,7 @@ class Backtester:
         
         # Process each day with progress tracking
         for day_idx, cur_day in enumerate(all_days, 1):
-            # ✅ Update progress: day start
+            # NOTE: Update progress: day start
             self.progress.start_day(cur_day, day_idx)
             
             # Skip weekends
@@ -386,7 +386,7 @@ class Backtester:
                 self.daily_pnl = 0.0
                 self._simulate_intraday_session(cur_day, results)
                 
-                # ✅ Update progress: day complete
+                # NOTE: Update progress: day complete
                 self.progress.update_stats(
                     capital=results['capital'],
                     open_positions=len(self.trade_simulator.positions)
@@ -436,7 +436,7 @@ class Backtester:
         self.progress.set_step("Exporting Diagnostics", "")
         self._export_diagnostics(results)
 
-        # ✅ Finalize progress display
+        # NOTE: Finalize progress display
         total_trades = len(results['trades'])
         self.progress.finalize(total_trades, results['capital'])
 
@@ -470,7 +470,7 @@ class Backtester:
         session_start_utc = session_start_et.tz_convert('UTC')
         session_end_utc = session_end_et.tz_convert('UTC')
 
-        # ✅ Screen for candidates
+        # NOTE: Screen for candidates
         self.progress.set_step("Screening", "Pre-screen & gap calculation")
         screen_res = self.bt_screener.screen(day)
         
@@ -483,11 +483,11 @@ class Backtester:
 
         signals: List[CandidateSignal] = screen_res.get("signals", [])
         
-        # ✅ Update progress with signal count
+        # NOTE: Update progress with signal count
         self.progress.update_stats(signals=len(signals))
         self.progress.set_step("Pattern Analysis", f"{len(signals)} candidates")
 
-        # ✅ Process signals using trade simulator
+        # NOTE: Process signals using trade simulator
         opened, rejected = self.trade_simulator.process_signals(
             day, 
             signals, 
@@ -497,7 +497,7 @@ class Backtester:
             premarket_enabled
         )
 
-        # ✅ Update progress with trades opened
+        # NOTE: Update progress with trades opened
         self.progress.update_stats(
             trades_opened=opened,
             capital=results['capital'],
@@ -527,15 +527,15 @@ class Backtester:
         if removed_count > 0:
             self.logger.info(f"Removed {removed_count} __DAY__ summary rows")
         
-        # ✅ NEW: Calculate missed winner metrics
+        # NOTE: NEW: Calculate missed winner metrics
         self.logger.info("Calculating missed winner probability scores...")
         diag_df = _calculate_missed_winner_metrics(diag_df)
         
-        # ✅ NEW: Calculate gate impact matrix (export separately)
+        # NOTE: NEW: Calculate gate impact matrix (export separately)
         self.logger.info("Calculating gate impact matrix...")
         gate_impact_df = _calculate_gate_impact_matrix(diag_df)
         
-        # ✅ NEW: Identify false negative signatures
+        # NOTE: NEW: Identify false negative signatures
         self.logger.info("Identifying false negative signatures...")
         false_negatives_df = _identify_false_negative_signatures(diag_df)
         
@@ -543,7 +543,7 @@ class Backtester:
         self.logger.info("Delineating reason column...")
         diag_df = _delineate_reason_column(diag_df)
         
-        # ✅ Export main diagnostics to reports directory
+        # NOTE: Export main diagnostics to reports directory
         out_fp = self.reports_dir / "backtest_candidates.csv"
         try:
             diag_df.to_csv(out_fp, index=False)
@@ -574,7 +574,7 @@ class Backtester:
         except Exception as e:
             self.logger.error(f"Failed to export diagnostics: {e}")
         
-        # ✅ Export gate impact matrix to reports directory
+        # NOTE: Export gate impact matrix to reports directory
         if not gate_impact_df.empty:
             gate_fp = self.reports_dir / "backtest_gate_impact.csv"
             try:
@@ -594,7 +594,7 @@ class Backtester:
             except Exception as e:
                 self.logger.error(f"Failed to export gate impact: {e}")
         
-        # ✅ Export false negative signatures to reports directory
+        # NOTE: Export false negative signatures to reports directory
         if not false_negatives_df.empty:
             fn_fp = self.reports_dir / "backtest_false_negatives.csv"
             try:
@@ -611,7 +611,7 @@ class Backtester:
             except Exception as e:
                 self.logger.error(f"Failed to export false negatives: {e}")
         
-        # ✅ NEW: Export daily performance CSV
+        # NOTE: NEW: Export daily performance CSV
         self.logger.info("Generating daily performance CSV...")
         try:
             from utils.reporting import generate_daily_performance_csv

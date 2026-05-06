@@ -1,0 +1,247 @@
+2026-05-05 23:12:18 INFO run_backtest - ================================================================================
+2026-05-05 23:12:18 INFO run_backtest - BACKTEST INITIALIZATION
+2026-05-05 23:12:18 INFO run_backtest - ================================================================================
+2026-05-05 23:12:18 INFO run_backtest - Run directory: D:\Coding Packages\Paramo\reports\backtest_20260505_231218
+2026-05-05 23:12:18 INFO run_backtest - Log file: D:\Coding Packages\Paramo\reports\backtest_20260505_231218\backtest_log.txt
+2026-05-05 23:12:18 INFO run_backtest - Console: screener warnings suppressed (see log file for details)
+2026-05-05 23:12:18 INFO run_backtest - Date range: 2024-01-03 to 2024-01-31
+2026-05-05 23:12:18 INFO run_backtest - Initial capital: $1,000.00
+2026-05-05 23:12:18 INFO run_backtest - Data directory: data/ticker_data
+2026-05-05 23:12:18 INFO run_backtest - Fast mode: False
+2026-05-05 23:12:18 INFO run_backtest - ================================================================================
+2026-05-05 23:12:21 INFO data_handler.local - Loading file index cache...
+2026-05-05 23:12:21 INFO data_handler.file_index_cache - ✓ Loaded file index from cache: index_20240103_20240131.pkl
+2026-05-05 23:12:21 INFO data_handler.local - Indexed 20 dates with 101186 total symbols
+2026-05-05 23:12:21 INFO data_handler.local - Cache: 2 days max
+2026-05-05 23:12:21 INFO run_backtest - Total days in range: 29
+2026-05-05 23:12:21 INFO run_backtest - Indexed trading days: 20
+2026-05-05 23:12:21 ERROR market_context.backtest - Failed to read data/market_context\SPY.csv: [Errno 2] No such file or directory: 'data/market_context\\SPY.csv' component=market_context_bt
+2026-05-05 23:12:21 ERROR market_context.backtest - Failed to read data/market_context\VIX.csv: [Errno 2] No such file or directory: 'data/market_context\\VIX.csv' component=market_context_bt
+2026-05-05 23:12:21 ERROR market_context.backtest - Failed to read data/market_context\RUT.csv: [Errno 2] No such file or directory: 'data/market_context\\RUT.csv' component=market_context_bt
+2026-05-05 23:12:21 WARNING market_context.backtest - Market context CSVs not fully available at None component=market_context_bt
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 INFO run_backtest - Starting backtest execution...
+2026-05-05 23:12:21 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:21 INFO backtester.core - BACKTEST START: 2024-01-03 to 2024-01-31 component=intraday_bt
+2026-05-05 23:12:21 INFO backtester.core - Initial Capital: $1,000.00 component=intraday_bt
+2026-05-05 23:12:21 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:21 INFO backtester.core - Total calendar days to process: 29 component=intraday_bt
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-03 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-03 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-03: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-04 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-04 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-04: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-05 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-05 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-05: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-08 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-08 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-08: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-09 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-09 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-09: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-10 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-10 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-10: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-11 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-11 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-11: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-12 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-12 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-12: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:21 INFO backtester.core - [13/29] 2024-01-15 - SKIP (no data) component=intraday_bt
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - SCREENING DAY: 2024-01-16 component=bt_screener
+2026-05-05 23:12:21 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:21 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:21 WARNING screener.backtest - No aggregate data for 2024-01-16 component=bt_screener
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-16: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:21 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-17 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-17 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-17: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-18 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-18 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-18: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-19 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-19 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-19: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-22 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-22 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-22: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-23 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-23 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-23: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-24 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-24 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-24: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-25 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-25 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-25: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-26 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-26 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-26: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-29 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-29 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-29: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-30 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-30 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-30: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - SCREENING DAY: 2024-01-31 component=bt_screener
+2026-05-05 23:12:22 INFO screener.backtest - ================================================================================ component=bt_screener
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - AggregateDataHandler initialized: data\daily_aggregates
+2026-05-05 23:12:22 INFO data_handler.aggregate_handler - Cache limit: 1 month(s)
+2026-05-05 23:12:22 WARNING screener.backtest - No aggregate data for 2024-01-31 component=bt_screener
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [MARKET CONTEXT] 2024-01-31: env=neutral, score=60.0, VIX=20.0, size_adj=1.00x component=trade_sim
+2026-05-05 23:12:22 INFO backtester.trade_simulator - [TRADING WINDOW] Enabled: All positions will be closed by 16:00 ET component=trade_sim
+2026-05-05 23:12:22 INFO backtester.core -  component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - CLOSING REMAINING POSITIONS component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core -  component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - CALCULATING STATISTICS component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core -  component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - BACKTEST COMPLETE component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Total time: 1s (0.0m) component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Days processed: 29 component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core -   • Trading days: 20 component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core -   • Skipped days: 9 component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Total trades: 0 component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Win rate: 0.0% component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Total return: 0.00% component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Max drawdown: 0.00% component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Profit factor: inf component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - Sharpe ratio: 0.00 component=intraday_bt
+2026-05-05 23:12:22 INFO backtester.core - ================================================================================ component=intraday_bt
+2026-05-05 23:12:22 INFO run_backtest - Backtest execution completed
+2026-05-05 23:12:22 INFO run_backtest - ================================================================================
+2026-05-05 23:12:22 INFO run_backtest - BACKTEST COMPLETED SUCCESSFULLY
+2026-05-05 23:12:22 INFO run_backtest - ================================================================================
+2026-05-05 23:12:22 INFO run_backtest - 
+
+=== INTRADAY BACKTEST RESULTS ===
+Performance
+  Initial Capital: $1,000.00
+  Final Capital:   $1,000.00
+  Total Return:    0.00%
+  Annualized:      0.00%
+  Max Drawdown:    0.00%
+
+Trades
+  Total Trades:    0
+  Win Rate:        0.00%
+  Profit Factor:   inf
+  Net Profit:      $0.00
+  Avg Win:         $0.00
+  Avg Loss:        $0.00
+
+Hold Times
+  Average:  0.0 minutes
+  Maximum:  0.0 minutes
+  Minimum:  0.0 minutes
+2026-05-05 23:12:22 INFO run_backtest - Statistics exported: reports\backtest_20260505_231218\statistics.json
+2026-05-05 23:12:22 INFO run_backtest - ================================================================================
+2026-05-05 23:12:22 INFO run_backtest - All outputs saved to: D:\Coding Packages\Paramo\reports\backtest_20260505_231218
+2026-05-05 23:12:22 INFO run_backtest -   effective_config.json
+2026-05-05 23:12:22 INFO run_backtest -   backtest_log.txt
+2026-05-05 23:12:22 INFO run_backtest -   backtest_results.txt
+2026-05-05 23:12:22 INFO run_backtest -   statistics.json
+2026-05-05 23:12:22 INFO run_backtest - ================================================================================

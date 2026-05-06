@@ -11,7 +11,7 @@ from utils.logging import get_logger
 from utils.reporting import compute_statistics
 
 def log_db_error(logger, msg, exc):
-    logger.error(f"{msg}: {exc}")
+    logger.error("%s: %s", msg, exc)
 
 class Monitor:
     """System monitoring and performance tracking"""
@@ -91,7 +91,10 @@ class Monitor:
                 ))
                 conn.commit()
             self._update_metrics(trade)
-            self.logger.info(f"Trade recorded {trade['symbol']} pnl=${trade['pnl']:.2f} reason={trade['exit_reason']}")
+            self.logger.info(
+                "Trade recorded %s pnl=$%.2f reason=%s",
+                trade['symbol'], trade['pnl'], trade['exit_reason']
+            )
         except Exception as e:
             log_db_error(self.logger, "Error recording trade", e)
 
@@ -134,7 +137,12 @@ class Monitor:
                 })
 
             stats = compute_statistics(trades=trades)
-            self.logger.info(f"Performance (30d): trades={stats.get('total_trades',0)} win_rate={stats.get('win_rate',0):.2f}% net=${stats.get('net_profit',0):,.2f}")
+            self.logger.info(
+                "Performance (30d): trades=%d win_rate=%.2f%% net=$%s",
+                stats.get('total_trades', 0),
+                stats.get('win_rate', 0),
+                format(stats.get('net_profit', 0), ',.2f'),
+            )
             return stats if stats else self.metrics
         except Exception as e:
             log_db_error(self.logger, "Error generating performance report", e)

@@ -3,15 +3,12 @@
 # =====================================================
 
 import time
-import pandas as pd  # ✅ ADDED: Missing import
+import pandas as pd  # NOTE: ADDED: Missing import
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
-from config.config import TradingConfig  # ✅ FIXED: Added .config
-from strategy.risk_manager import RiskManager
+from config.config import TradingConfig  # NOTE: FIXED: Added .config
+from strategy.risk_manager import RiskManager, calc_atr   # add calc_atr import
 from utils.logging import get_logger
-
-def log_api_error(logger, msg, exc):
-    logger.error(f"{msg}: {exc}")
 
 def place_order(api, logger, **kwargs):
     """Helper to place an order and handle exceptions."""
@@ -20,7 +17,7 @@ def place_order(api, logger, **kwargs):
         time.sleep(1)
         return api.get_order(order.id)
     except Exception as e:
-        log_api_error(logger, "Order placement failed", e)
+        logger.error(f"Order placement failed: {e}")
         return None
 
 class TradeExecutor:
@@ -44,6 +41,16 @@ class TradeExecutor:
             entry_price = signal['entry_price']
             stop_price = signal['stop_price']
             is_reentry = signal.get('is_reentry', False)
+
+            # Gate re-entry against config (applies to BOTH live and backtest)
+            if is_reentry:
+                if not self.config.risk.ENABLE_REENTRY:
+                    self.logger.info(f"Re-entry blocked for {symbol}: ENABLE_REENTRY=False")
+                    return {'success': False, 'reason': 'reentry_disabled'}
+                reentry_count = self.reentry_history.get(symbol, 0)
+                if reentry_count >= self.config.risk.MAX_REENTRIES_PER_STOCK:
+                    self.logger.info(f"Re-entry blocked for {symbol}: max reentries reached ({reentry_count})")
+                    return {'success': False, 'reason': 'max_reentries_reached'}
 
             # Get market context adjustment
             market_adjustment = 1.0
@@ -105,7 +112,7 @@ class TradeExecutor:
                 }
             return {'success': False, 'reason': f"Order not filled: {getattr(entry_order, 'status', 'unknown')}"}
         except Exception as e:
-            log_api_error(self.logger, f"Error executing entry for {signal['symbol']}", e)
+            self.logger.error("Error executing entry for %s: %s", signal['symbol'], e)
             return {'success': False, 'reason': str(e)}
 
     def _track_new_position(self, symbol, filled_price, position_size, stop_price, stop_order, entry_order, is_reentry):
@@ -116,7 +123,7 @@ class TradeExecutor:
         # Get recent bars for ATR trailing stop
         try:
             recent_bars = self.api.get_bars(symbol, '1Min', limit=50).df
-        except Exception:  # ✅ FIXED: Added except clause
+        except Exception:  # NOTE: FIXED: Added except clause
             recent_bars = pd.DataFrame()
         
         self.active_trades[symbol] = {
@@ -212,7 +219,7 @@ class TradeExecutor:
             return {'success': False, 'reason': f"Exit order not filled: {getattr(exit_order, 'status', 'unknown')}"}
             
         except Exception as e:
-            log_api_error(self.logger, f"Error executing exit for {symbol}", e)
+            self.logger.error("Error executing exit for %s: %s", symbol, e)
             return {'success': False, 'reason': str(e)}
 
     def update_active_positions(self):
@@ -245,35 +252,28 @@ class TradeExecutor:
             self._update_trailing_stop(symbol, current_price)
 
     def _update_trailing_stop(self, symbol: str, current_price: float):
-        """Update ATR-based trailing stop"""
+        """Update ATR-based trailing stop using shared calc_atr helper."""
         trade = self.active_trades[symbol]
-        
-        # Update highest price
         if current_price > trade['highest_price']:
             trade['highest_price'] = current_price
-        
-        # Calculate profit percentage
+
         profit_pct = ((current_price - trade['entry_price']) / trade['entry_price']) * 100
-        
-        # Only activate trailing stop if minimum profit reached
         if profit_pct < self.config.risk.ATR_TRAILING_MIN_PROFIT_PCT:
             return
-        
-        # Calculate ATR if we have bars
-        if not trade['recent_bars'].empty and len(trade['recent_bars']) >= self.config.risk.ATR_TRAILING_PERIOD:
-            atr = self._calculate_atr(trade['recent_bars'], self.config.risk.ATR_TRAILING_PERIOD)
+
+        period = self.config.risk.ATR_TRAILING_PERIOD
+        if not trade['recent_bars'].empty and len(trade['recent_bars']) >= period:
+            atr = calc_atr(trade['recent_bars'], period)
             new_stop = current_price - (atr * self.config.risk.ATR_TRAILING_MULTIPLIER)
-            
-            # Only raise the stop, never lower it
+
             if new_stop > trade['stop_price']:
                 old_stop = trade['stop_price']
                 trade['stop_price'] = new_stop
-                
-                # Update stop order
+
                 try:
                     if trade.get('stop_order_id'):
                         self.api.cancel_order(trade['stop_order_id'])
-                    
+
                     new_stop_order = place_order(
                         self.api, self.logger,
                         symbol=symbol,
@@ -283,7 +283,7 @@ class TradeExecutor:
                         time_in_force='gtc',
                         stop_price=new_stop
                     )
-                    
+
                     if new_stop_order:
                         trade['stop_order_id'] = new_stop_order.id
                         self.logger.info(
@@ -293,25 +293,6 @@ class TradeExecutor:
                         )
                 except Exception as e:
                     self.logger.error(f"Failed to update trailing stop for {symbol}: {e}")
-
-    def _calculate_atr(self, bars: pd.DataFrame, period: int) -> float:
-        """Calculate Average True Range"""
-        try:
-            high = bars['high'].values
-            low = bars['low'].values
-            close = bars['close'].values
-            
-            tr1 = high - low
-            tr2 = abs(high - close[:-1])  # Previous close
-            tr3 = abs(low - close[:-1])
-            
-            tr = pd.DataFrame({'tr1': tr1[:-1], 'tr2': tr2, 'tr3': tr3}).max(axis=1)
-            atr = tr.rolling(period).mean().iloc[-1]
-            
-            return float(atr)
-        except Exception as e:
-            self.logger.warning(f"ATR calculation failed: {e}")
-            return 0.0
 
     def close_all_positions(self):
         """Close all active positions"""

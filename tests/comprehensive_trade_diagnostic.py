@@ -441,8 +441,8 @@ class ComprehensiveTradeDiagnostic:
             signal_bar  = bars.iloc[warmup - 1]   # last bar pattern runs on
             next_bar    = bars.iloc[warmup]        # first bar available for fill
 
-            entry_price = float(next_bar['open'])          # ← fixed: was signal_bar['close']
-            entry_ts_raw = next_bar.get('timestamp', None) # ← fixed: timestamp of fill bar
+            entry_price = float(next_bar['open'])          # NOTE: fixed: was signal_bar['close']
+            entry_ts_raw = next_bar.get('timestamp', None) # NOTE: fixed: timestamp of fill bar
 
             if entry_price < self.config.screening.MIN_PRICE:
                 failed_warmup.append({'symbol': symbol, 'reason': 'entry_price_below_min',
@@ -747,9 +747,9 @@ class ComprehensiveTradeDiagnostic:
             'risk_atr_trailing_period':                cfg.risk.ATR_TRAILING_PERIOD,
             'risk_breakeven_threshold_pct':            cfg.risk.BREAKEVEN_THRESHOLD_PCT,
             # Reentry
-            'reentry_enabled':                         cfg.reentry.ENABLE_REENTRY,
-            'reentry_max_per_stock':                   cfg.reentry.MAX_REENTRIES_PER_STOCK,
-            'reentry_cooldown_minutes':                cfg.reentry.REENTRY_COOLDOWN_MINUTES,
+            'reentry_enabled':                         cfg.risk.ENABLE_REENTRY,
+            'reentry_max_per_stock':                   cfg.risk.MAX_REENTRIES_PER_STOCK,
+            'reentry_cooldown_minutes':                cfg.risk.REENTRY_COOLDOWN_MINUTES,
             # Backtest
             'backtest_start_date':                     cfg.backtest.START_DATE,
             'backtest_end_date':                       cfg.backtest.END_DATE,
@@ -831,7 +831,7 @@ class ComprehensiveTradeDiagnostic:
         return df
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ---────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     import argparse
 

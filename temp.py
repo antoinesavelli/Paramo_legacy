@@ -84,7 +84,7 @@ for day in all_days:
         agg_days_missing.append(day)
 
 # Use only confirmed trading days for all downstream checks
-all_days = agg_days_found  # ← holidays naturally excluded
+all_days = agg_days_found  # NOTE: holidays naturally excluded
 
 print(f"  Confirmed trading days   : {len(all_days)}")
 print(f"  No aggregate data        : {len(agg_days_missing)}")
@@ -97,7 +97,7 @@ if agg_days_missing:
 subsection("Intraday Files (1-min parquet)")
 data_handler = LocalDataHandler(cfg, data_dir=str(DATA_DIR))
 intraday_found, intraday_missing = [], []
-for day in all_days:   # ← all_days is now holiday-safe
+for day in all_days:   # NOTE: all_days is now holiday-safe
     day_str = day.strftime('%Y-%m-%d')
     if data_handler.has_data_for_date(day_str):
         intraday_found.append(day)

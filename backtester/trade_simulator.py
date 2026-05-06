@@ -151,7 +151,7 @@ class TradeSimulator:
         Process a single signal.
         
         Returns:
-            'opened', 'rejected', or 'skipped'
+            'opened', 'rejected' or 'skipped'
         """
         symbol = sig.symbol
         entry_ts = sig.entry_ts
@@ -203,6 +203,16 @@ class TradeSimulator:
         
         if validation_result is not None:
             return validation_result
+
+        # Apply slippage adjustment if enabled
+        gap_threshold = getattr(self.config.risk, 'SLIPPAGE_GAP_THRESHOLD', 200.0)
+        if self.config.risk.ENABLE_SLIPPAGE:
+            slip_pct = (
+                self.config.risk.ENTRY_SLIPPAGE_HIGH_GAP_PCT
+                if gap_pct > gap_threshold
+                else self.config.risk.ENTRY_SLIPPAGE_PCT
+            )
+            entry_price = entry_price * (1 + slip_pct)
 
         # Get detailed pattern metrics
         bars = self.data_handler.get_intraday_bars(
@@ -351,6 +361,13 @@ class TradeSimulator:
             )
             return 'rejected'
         
+        # Volume participation validation
+        if entry_metrics['entry_bar_volume'] is not None:
+            max_participation = 0.10   # don't consume more than 10% of bar volume
+            max_size_by_volume = int(entry_metrics['entry_bar_volume'] * max_participation)
+            if size > max_size_by_volume > 0:
+                size = max(1, max_size_by_volume)
+        
         return None
     
     def _create_rejection_diagnostic(
@@ -485,11 +502,16 @@ class TradeSimulator:
         is_premarket: bool
     ):
         """Handle trade exit logging and diagnostics."""
+        # NOTE: Return proceeds to capital (entry cost was debited in _process_signal)
+        exit_price = trade['exit_price']
+        size = trade['size']
+        results['capital'] += exit_price * size
+
         # Log trade exit
         patterns = pattern_metrics.get('patterns_detected', '')
         self.logger.info(
             f"[EXIT] {symbol} | "
-            f"Price: ${trade['exit_price']:.2f} | "
+            f"Price: ${exit_price:.2f} | "
             f"P&L: ${trade['pnl']:+.2f} ({trade['return_pct']:+.2f}%) | "
             f"Reason: {trade['exit_reason']} | "
             f"Pattern Score: {pattern_strength:.1f} | "

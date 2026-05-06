@@ -51,7 +51,7 @@ def setup_logging(level: int = logging.INFO, log_file: Optional[str] = None) -> 
 
     if log_file:
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setLevel(logging.DEBUG)  # ✅ CHANGED: Always log DEBUG+ to file for diagnostics
+        file_handler.setLevel(logging.DEBUG)  # NOTE: CHANGED: Always log DEBUG+ to file for diagnostics
         file_handler.setFormatter(logging.Formatter(fmt=fmt, datefmt=datefmt))
         root.addHandler(file_handler)
 
@@ -100,7 +100,7 @@ def enable_backtest_optimization(level: BacktestLogLevel = BacktestLogLevel.MINI
         # Keep logging as is
         root.setLevel(logging.INFO)
     
-    # ✅ ADDED: Ensure file handlers still capture everything
+    # NOTE: ADDED: Ensure file handlers still capture everything
     for handler in root.handlers:
         if isinstance(handler, logging.FileHandler):
             handler.setLevel(logging.DEBUG)
@@ -145,7 +145,7 @@ class OptimizedLogger:
             opt_logger.flush()  # Periodic flush
     
     # Final flush
-    opt_logger.flush()  # ✅ IMPORTANT: Always flush at end!
+    opt_logger.flush()  # NOTE: IMPORTANT: Always flush at end!
     ```
     
     BUFFER MANAGEMENT:

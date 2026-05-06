@@ -27,7 +27,7 @@ def create_template(template_type: str, output_path: str):
     templates = {
         'confluence_9hour': {
             'description': '9-hour pattern confluence weight optimization (18 explicit combinations × 30min)',
-            # ✅ NEW: List combinations explicitly (not as arrays)
+            # NOTE: NEW: List combinations explicitly (not as arrays)
             'combinations_list': [
                 {'pattern.CONFLUENCE_WEIGHT_STEP_UP': 1.0, 'pattern.CONFLUENCE_WEIGHT_PARABOLIC': 0.0, 'pattern.CONFLUENCE_WEIGHT_VOLUME': 0.0, 'pattern.CONFLUENCE_WEIGHT_BREAKOUT': 0.0, 'pattern.CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE': 0.0},
                 {'pattern.CONFLUENCE_WEIGHT_STEP_UP': 0.0, 'pattern.CONFLUENCE_WEIGHT_PARABOLIC': 1.0, 'pattern.CONFLUENCE_WEIGHT_VOLUME': 0.0, 'pattern.CONFLUENCE_WEIGHT_BREAKOUT': 0.0, 'pattern.CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE': 0.0},
@@ -177,7 +177,7 @@ def create_template(template_type: str, output_path: str):
     print(f"\nTemplate type: {template_type}")
     print(f"Description: {description}")
     
-    # ✅ FIX: Handle both list and dict formats
+    # NOTE: FIX: Handle both list and dict formats
     if isinstance(template, list):
         print(f"Format: Explicit combination list")
         print(f"Total combinations: {len(template)}")
@@ -188,7 +188,7 @@ def create_template(template_type: str, output_path: str):
     if template_type == 'confluence_9hour':
         print(f"\n📊 18 Hand-Picked Pattern Weight Combinations:")
         print("=" * 80)
-        combinations = templates['confluence_9hour']['combinations_list']  # ✅ FIX: Use combinations_list
+        combinations = templates['confluence_9hour']['combinations_list']  # NOTE: FIX: Use combinations_list
         for i, combo in enumerate(combinations, 1):
             step = combo['pattern.CONFLUENCE_WEIGHT_STEP_UP']
             para = combo['pattern.CONFLUENCE_WEIGHT_PARABOLIC']

@@ -20,7 +20,7 @@ from typing import List
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def calculate_rolling_volume_averages(symbol_data: pd.DataFrame, lookback_periods: List[int] = [10, 20]) -> pd.DataFrame:  # ✅ FIXED: Added type hint
+def calculate_rolling_volume_averages(symbol_data: pd.DataFrame, lookback_periods: List[int] = [10, 20]) -> pd.DataFrame:  # NOTE: FIXED: Added type hint
     """
     Calculate rolling volume averages for a single symbol.
     
@@ -92,7 +92,7 @@ def build_daily_aggregates(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # ✅ NEW FORMAT: Find all YYYY-MM-DD.parquet files
+    # NOTE: NEW FORMAT: Find all YYYY-MM-DD.parquet files
     daily_files = sorted(data_dir.glob("*/*/????-??-??.parquet"))
     logger.info(f"Found {len(daily_files)} daily files to process")
     
@@ -120,7 +120,7 @@ def build_daily_aggregates(
         month_output_dir = output_dir / year
         month_output_dir.mkdir(parents=True, exist_ok=True)
         
-        # ✅ NEW: Use YYYY-MM.parquet format (with hyphen)
+        # NOTE: NEW: Use YYYY-MM.parquet format (with hyphen)
         output_file = month_output_dir / f"{year_month}.parquet"
         
         # Skip if already exists (for resuming)
@@ -147,7 +147,7 @@ def build_daily_aggregates(
                 if 'timestamp' in df.columns:
                     df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
                 
-                # ✅ FILTER OUT INVALID PRICES (zero or negative values)
+                # NOTE: FILTER OUT INVALID PRICES (zero or negative values)
                 # This prevents zero values from being picked up in the min() aggregation
                 df = df[
                     (df['open'] > 0) & 
@@ -178,8 +178,8 @@ def build_daily_aggregates(
                 # Add date column
                 daily_stats['date'] = date
                 
-                # ✅ Load and merge fundamentals data
-                fundamentals = load_fundamentals_for_date(fundamentals_dir, datetime.combine(date, datetime.min.time()))  # ✅ FIXED: Convert date to datetime
+                # NOTE: Load and merge fundamentals data
+                fundamentals = load_fundamentals_for_date(fundamentals_dir, datetime.combine(date, datetime.min.time()))  # NOTE: FIXED: Convert date to datetime
                 
                 if not fundamentals.empty:
                     # Merge fundamentals with daily stats

@@ -363,7 +363,7 @@ class ExitSimulator:
         Returns:
             Adjusted exit price after slippage
         """
-        # ✅ Check if slippage is enabled
+        # NOTE: Check if slippage is enabled
         if not self.config.risk.ENABLE_SLIPPAGE:
             return base_exit_price
         

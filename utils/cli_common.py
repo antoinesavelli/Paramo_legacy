@@ -9,7 +9,7 @@ import os
 from utils import BacktestLogLevel, enable_backtest_optimization
 
 
-# ✅ FIX: Set UTF-8 encoding for Windows console
+# NOTE: FIX: Set UTF-8 encoding for Windows console
 if sys.platform == 'win32':
     try:
         # Set UTF-8 mode for stdout/stderr
@@ -50,7 +50,7 @@ def add_logging_args(p: argparse.ArgumentParser):
     p.add_argument("--log-level", default="INFO",
                    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                    help="Logging level (default: INFO)")
-    # ✅ CHANGED: Default to 'normal' for full diagnostic output
+    # NOTE: CHANGED: Default to 'normal' for full diagnostic output
     p.add_argument("--optimize-logging", choices=["normal", "minimal", "silent"],
                    default="normal",
                    help="Optimize logging for backtest performance (default: normal for full diagnostics)")
@@ -69,7 +69,7 @@ def configure_logging(level: str, log_file: str = None, optimize: str = None, sh
         show_screener_warnings: Whether to show screener warnings in console
     """
     
-    # ✅ Create console handler with UTF-8 support
+    # NOTE: Create console handler with UTF-8 support
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(
@@ -86,7 +86,7 @@ def configure_logging(level: str, log_file: str = None, optimize: str = None, sh
     handlers = [console_handler]
     
     if log_file:
-        # ✅ File handler with explicit UTF-8 encoding
+        # NOTE: File handler with explicit UTF-8 encoding
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(
@@ -97,12 +97,12 @@ def configure_logging(level: str, log_file: str = None, optimize: str = None, sh
         )
         handlers.append(file_handler)
     
-    # ✅ Configure root logger with handlers
+    # NOTE: Configure root logger with handlers
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
         handlers=handlers,
-        force=True  # ✅ Force reconfiguration if already configured
+        force=True  # NOTE: Force reconfiguration if already configured
     )
     
     # Apply optimization if requested

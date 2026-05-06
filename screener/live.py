@@ -60,11 +60,11 @@ class LiveScreener:
         candidates = gaps_df[gaps_df["gap_percent"] >= min_gap]
         
         if candidates.empty:
-            self.logger.info(f"No stocks meeting gap criteria (min={min_gap}%)")
+            self.logger.info("No stocks meeting gap criteria (min=%s%%)", min_gap)
             return []
-        
-        self.logger.info(f"Candidates meeting gap criteria: {len(candidates)}")
-        
+
+        self.logger.info("Candidates meeting gap criteria: %d", len(candidates))
+
         # Use unified screener logic
         result = self.core_screener.screen_symbols(
             candidates_df=candidates,
@@ -88,6 +88,6 @@ class LiveScreener:
         ]
         
         self.last_screen_time = datetime.now()
-        self.logger.info(f"Screening complete. Signals: {len(self.screened_stocks)}")
-        
+        self.logger.info("Screening complete. Signals: %d", len(self.screened_stocks))
+
         return self.screened_stocks

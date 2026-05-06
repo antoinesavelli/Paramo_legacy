@@ -21,17 +21,17 @@ def parse_override_pairs(pairs: List[str]) -> List[Tuple[str, str]]:
 
 def _coerce(example: Any, raw: str):
     if isinstance(example, bool):
-        return raw.lower() in ("1","true","yes","on")
+        return raw.lower() in ("1", "true", "yes", "on")
     if isinstance(example, int):
         try:
             return int(raw)
-        except:
-            return example
+        except (ValueError, TypeError):
+            raise ValueError(f"Cannot coerce {raw!r} to int") from None
     if isinstance(example, float):
         try:
             return float(raw)
-        except:
-            return example
+        except (ValueError, TypeError):
+            raise ValueError(f"Cannot coerce {raw!r} to float") from None
     if isinstance(example, list):
         return [x.strip() for x in raw.split(",")]
     return raw
@@ -62,7 +62,11 @@ def apply_env_layer(config: TradingConfig, prefix: str = "PARAMO__") -> TradingC
     for k, v in os.environ.items():
         if not k.startswith(prefix):
             continue
-        path_parts = k[len(prefix):].split("__")
+        raw_parts = k[len(prefix):].split("__")
+        # Windows uppercases env-var names; lowercase sub-section names so
+        # they match TradingConfig field names (e.g. "screening", "risk").
+        # Leaf-level field names (last part) are already UPPER in the dataclasses.
+        path_parts = [p.lower() if i < len(raw_parts) - 1 else p for i, p in enumerate(raw_parts)]
         cfg = _apply_path(cfg, path_parts, v)
     return cfg
 
@@ -70,9 +74,12 @@ def validate_config(cfg: TradingConfig):
     """Validate configuration parameters."""
     errs = []
 
-    # Screening validation — MAX_PRICE no longer exists
+    # Screening validation
     if cfg.screening.MIN_PRICE <= 0:
         errs.append("screening.MIN_PRICE must be > 0")
+
+    if cfg.screening.MIN_GAP_PERCENT <= 0:
+        errs.append("screening.MIN_GAP_PERCENT must be > 0")
 
     # Risk validation (percentage-based)
     if cfg.risk.STOP_LOSS_PERCENT_OF_ACCOUNT <= 0:
@@ -93,7 +100,7 @@ def validate_config(cfg: TradingConfig):
     if cfg.risk.MAX_CONCURRENT_POSITIONS <= 0:
         errs.append("risk.MAX_CONCURRENT_POSITIONS must be > 0")
 
-    if hasattr(cfg.risk, 'ATR_TRAILING_ENABLED') and cfg.risk.ATR_TRAILING_ENABLED:
+    if cfg.risk.ATR_TRAILING_ENABLED:
         if cfg.risk.ATR_TRAILING_PERIOD <= 0:
             errs.append("risk.ATR_TRAILING_PERIOD must be > 0")
         if cfg.risk.ATR_TRAILING_MULTIPLIER <= 0:

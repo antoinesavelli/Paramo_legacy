@@ -30,7 +30,7 @@ logger = logging.getLogger("data_handler.aggregate_handler")
 class AggregateDataHandler:
     """Handles daily aggregate OHLCV data with efficient caching."""
     
-    # ✅ OPTIMIZED: Only load essential columns (added float and marketcap)
+    # NOTE: OPTIMIZED: Only load essential columns (added float and marketcap)
     REQUIRED_COLUMNS = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
     OPTIONAL_COLUMNS = ['bar_count', 'first_timestamp', 'last_timestamp', 
                         'avg_volume_10d', 'avg_volume_20d', 'float', 'marketcap']
@@ -45,7 +45,7 @@ class AggregateDataHandler:
         """
         self.aggregate_dir = Path(aggregate_dir)
         self._cache = OrderedDict()
-        # ✅ CHANGED: Default to 1 month only
+        # NOTE: CHANGED: Default to 1 month only
         self._cache_limit = cache_limit
         
         logger.info(f"AggregateDataHandler initialized: {self.aggregate_dir}")
@@ -64,7 +64,7 @@ class AggregateDataHandler:
             or None if not found
         """
         date_obj = pd.Timestamp(day).normalize()
-        year_month = date_obj.strftime('%Y-%m')  # ✅ UPDATED: Use YYYY-MM format
+        year_month = date_obj.strftime('%Y-%m')  # NOTE: UPDATED: Use YYYY-MM format
         date_key = date_obj.date()
         
         # Load monthly aggregates
@@ -99,7 +99,7 @@ class AggregateDataHandler:
         if 'last_timestamp' in row.index:
             stats['last_timestamp'] = row['last_timestamp']
         if 'avg_volume_10d' in row.index:
-            stats['avg_volume_10d'] = float(row['avg_volume_10d'])  # ✅ FIXED: Removed extra closing paren
+            stats['avg_volume_10d'] = float(row['avg_volume_10d'])  # NOTE: FIXED: Removed extra closing paren
         if 'avg_volume_20d' in row.index:
             stats['avg_volume_20d'] = float(row['avg_volume_20d'])
         if 'float' in row.index and pd.notna(row['float']):
@@ -120,7 +120,7 @@ class AggregateDataHandler:
             DataFrame with all symbols for that day, or None if not found
         """
         date_obj = pd.Timestamp(day).normalize()
-        year_month = date_obj.strftime('%Y-%m')  # ✅ UPDATED: Use YYYY-MM format
+        year_month = date_obj.strftime('%Y-%m')  # NOTE: UPDATED: Use YYYY-MM format
         date_key = date_obj.date()
         
         # Load monthly aggregates
@@ -151,10 +151,10 @@ class AggregateDataHandler:
         
         # Generate list of year-months to check
         date_range = pd.date_range(start=start_obj, end=end_obj, freq='MS')
-        year_months = [d.strftime('%Y-%m') for d in date_range]  # ✅ UPDATED: Use YYYY-MM format
+        year_months = [d.strftime('%Y-%m') for d in date_range]  # NOTE: UPDATED: Use YYYY-MM format
         
         # Also include the end month if not already included
-        end_month = end_obj.strftime('%Y-%m')  # ✅ UPDATED: Use YYYY-MM format
+        end_month = end_obj.strftime('%Y-%m')  # NOTE: UPDATED: Use YYYY-MM format
         if end_month not in year_months:
             year_months.append(end_month)
         
@@ -205,7 +205,7 @@ class AggregateDataHandler:
             return pd.DataFrame()
         
         try:
-            # ✅ Load only required columns for memory efficiency
+            # NOTE: Load only required columns for memory efficiency
             df = pd.read_parquet(file_path, dtype_backend='numpy_nullable')
             
             # Validate required columns

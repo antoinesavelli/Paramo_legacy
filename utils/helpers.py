@@ -3,7 +3,6 @@
 import hashlib
 import json
 from typing import Any, Dict, Optional
-import pickle
 import logging
 from datetime import datetime
 import pytz
@@ -17,25 +16,6 @@ def calculate_hash(data: Any) -> str:
     else:
         data_str = str(data)
     return hashlib.md5(data_str.encode()).hexdigest()
-
-
-def validate_config(config: Any) -> bool:
-    """Validate configuration has all required attributes."""
-    try:
-        required = [
-            config.api.ALPACA_API_KEY,
-            config.api.ALPACA_SECRET_KEY,
-            config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT,
-            config.risk.MAX_CONCURRENT_POSITIONS,
-            config.screening.MIN_GAP_PERCENT
-        ]
-        if any(v is None for v in required):
-            return False
-        if config.risk.STOP_LOSS_PERCENT_OF_ACCOUNT <= 0 or config.risk.MAX_CONCURRENT_POSITIONS <= 0:
-            return False
-        return True
-    except AttributeError:
-        return False
 
 
 def format_currency(amount: float) -> str:
@@ -74,27 +54,38 @@ def is_market_hours(timestamp: datetime, config: Any) -> bool:
 
 
 def save_state(data: Dict, filepath: str) -> bool:
-    """Save system state to file."""
+    """Persist system state to a JSON file.
+
+    The data dict must contain only JSON-serialisable values (str, int, float,
+    bool, None, list, dict).  Non-serialisable types (e.g. datetime) must be
+    converted by the caller before passing them in.
+    """
     try:
-        with open(filepath, 'wb') as f:
-            pickle.dump(data, f)
-            bytes_written = f.tell() if hasattr(f, "tell") else "n/a"
-        logging.info("State saved successfully path=%s bytes=%s hash=%s",
-                     filepath, bytes_written, calculate_hash(data))
+        path = os.path.abspath(filepath)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        logging.info("State saved path=%s hash=%s", path, calculate_hash(data))
         return True
-    except Exception as e:
+    except (TypeError, ValueError) as e:
+        logging.error("State contains non-serialisable value path=%s err=%s", filepath, e)
+        return False
+    except OSError as e:
         logging.error("Error saving state path=%s err=%s", filepath, e)
         return False
 
 
 def load_state(filepath: str) -> Optional[Dict]:
-    """Load system state from file."""
+    """Load system state from a JSON file."""
     try:
-        with open(filepath, 'rb') as f:
-            state = pickle.load(f)
-        logging.info("State loaded successfully path=%s hash=%s", filepath, calculate_hash(state))
+        path = os.path.abspath(filepath)
+        with open(path, 'r', encoding='utf-8') as f:
+            state = json.load(f)
+        logging.info("State loaded path=%s hash=%s", path, calculate_hash(state))
         return state
-    except Exception as e:
+    except (json.JSONDecodeError, ValueError) as e:
+        logging.error("State file corrupt or invalid JSON path=%s err=%s", filepath, e)
+        return None
+    except OSError as e:
         logging.error("Error loading state path=%s err=%s", filepath, e)
         return None
 
@@ -108,28 +99,14 @@ def log_and_return(logger, message, return_value):
 def check_first_bar(data_dir, date_str, symbol, tz='US/Eastern'):
     """Check for first available bar instead of opening bar."""
     from data_handler.local import load_day_with_first_bar
-    
-    # Simple file existence check - if no file exists, just skip
+
     parquet_path = os.path.join(data_dir, f"{date_str}.parquet")
     if not os.path.exists(parquet_path):
-        print(f"No data for {symbol} on {date_str}: File not found")
+        logging.warning("check_first_bar: no data file symbol=%s date=%s path=%s",
+                        symbol, date_str, parquet_path)
         return
 
-    # Try loading the data
     df = load_day_with_first_bar(data_dir, date_str, symbol, tz)
     if df.empty:
-        print(f"No data for {symbol} on {date_str}")
-        return
-
-    if 'window_start' in df.columns:
-        first_bar_time = df['window_start'].iloc[0]
-        print(f"First available bar for {symbol} on {date_str} at {first_bar_time}:")
-        first_bar = df[df['timestamp'] == first_bar_time]
-        print(first_bar)
-    else:
-        print(f"No window_start column found for {symbol} on {date_str}.")
-        if not df.empty:
-            print("First row available:")
-            print(df.head(1))
-        else:
-            print("No bars available for this symbol on this date.")
+        logging.warning("check_first_bar: empty dataframe symbol=%s date=%s",
+                        symbol, date_str)

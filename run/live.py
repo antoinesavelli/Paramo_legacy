@@ -38,10 +38,10 @@ def main():
             export_path=args.export_config
         )
     except ValueError as e:
-        logger.error(f"Configuration validation failed: {e}")
+        logger.error("Configuration validation failed: %s", e)
         return 2
     except Exception as e:
-        logger.error(f"Configuration error: {e}")
+        logger.error("Configuration error: %s", e)
         return 2
 
     # Verify API keys are set
@@ -75,7 +75,7 @@ def main():
     try:
         system.start()
     except Exception as e:
-        logger.exception(f"Live system crashed: {e}")
+        logger.exception("Live system crashed: %s", e)
         try:
             system.shutdown()
         except Exception:

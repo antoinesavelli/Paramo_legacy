@@ -154,13 +154,13 @@ class FileIndexCache:
             year = current_date.strftime("%Y")
             month = current_date.strftime("%m")
             
-            # ✅ NEW FORMAT: YYYY-MM-DD.parquet
+            # NOTE: NEW FORMAT: YYYY-MM-DD.parquet
             file_path = data_path / year / month / f"{date_str}.parquet"
             
             if file_path.exists():
                 # Quick scan for symbols
                 try:
-                    # ✅ CHANGED: Read symbol column directly (most efficient)
+                    # NOTE: CHANGED: Read symbol column directly (most efficient)
                     df_symbols = pd.read_parquet(file_path, columns=['symbol'])
                     symbols = set(df_symbols['symbol'].dropna().unique())
                     symbols = {s for s in symbols if s and isinstance(s, str)}

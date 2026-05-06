@@ -46,7 +46,7 @@ class BacktestScreener:
         self.logger.info(f"SCREENING DAY: {day.date()}")
         self.logger.info("=" * 80)
         
-        # ✅ FIX: Use AggregateDataHandler directly instead of deprecated calculate_gaps()
+        # NOTE: FIX: Use AggregateDataHandler directly instead of deprecated calculate_gaps()
         from data_handler.aggregate_handler import AggregateDataHandler
         
         agg_dir = Path(self.config.backtest.BASE_DATA_DIR) / "daily_aggregates"
@@ -81,13 +81,13 @@ class BacktestScreener:
             day_row = day_agg[day_agg['symbol'] == symbol].iloc[0]
             prev_row = prev_agg[prev_agg['symbol'] == symbol].iloc[0]
             
-            # ✅ FIX: Validate prev_close before division
+            # NOTE: FIX: Validate prev_close before division
             prev_close = prev_row['close']
             if pd.isna(prev_close) or prev_close <= 0:
                 self.logger.debug(f"Skipping {symbol}: invalid prev_close={prev_close}")
                 continue
             
-            # ✅ FIX: Validate day open price
+            # NOTE: FIX: Validate day open price
             day_open = day_row['open']
             if pd.isna(day_open) or day_open <= 0:
                 self.logger.debug(f"Skipping {symbol}: invalid open={day_open}")
@@ -95,7 +95,7 @@ class BacktestScreener:
             
             gap_pct = ((day_open - prev_close) / prev_close) * 100.0
             
-            # ✅ FIX: Skip if gap calculation resulted in invalid value
+            # NOTE: FIX: Skip if gap calculation resulted in invalid value
             if not np.isfinite(gap_pct):
                 self.logger.debug(f"Skipping {symbol}: invalid gap_pct={gap_pct}")
                 continue

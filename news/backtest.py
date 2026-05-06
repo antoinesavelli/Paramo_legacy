@@ -28,7 +28,7 @@ class NewsIntegrationBacktest:
         self.data_dir = Path(data_dir)
         self.logger = get_logger(__name__, component="news_bt")
         
-        # ✅ Single monthly cache (not 30)
+        # NOTE: Single monthly cache (not 30)
         self._current_month_key = None
         self._current_month_data = None
 
@@ -50,7 +50,7 @@ class NewsIntegrationBacktest:
         try:
             monthly_df = pd.read_parquet(file_path)
             
-            # ✅ Parse date column as timezone-aware datetime (UTC)
+            # NOTE: Parse date column as timezone-aware datetime (UTC)
             if 'date' in monthly_df.columns:
                 monthly_df['date'] = pd.to_datetime(monthly_df['date'], utc=True)
             

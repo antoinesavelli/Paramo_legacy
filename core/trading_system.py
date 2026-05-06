@@ -188,6 +188,8 @@ class TradingSystem:
     def _run_trading_cycle(self):
         try:
             candidates = self.screener.run_screen()
+            max_candidates = self.config.backtest.MAX_CANDIDATES_PER_DAY
+            candidates = candidates[:max_candidates]          # NOTE: enforce same cap as backtest
             for candidate in candidates:
                 if candidate['symbol'] not in self.trade_executor.active_trades:
                     self.trade_executor.execute_entry(candidate)

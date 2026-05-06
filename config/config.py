@@ -6,6 +6,12 @@
 #     config files anywhere in the codebase (e.g. core/, screener/, scripts/).
 #   - All new settings belong in the appropriate dataclass below.
 #   - All subsystems must obtain config via config.loader.build_config().
+#
+# PATH DEFAULTS:
+#   All path fields default to relative paths anchored at the working directory.
+#   Override any path at runtime without code changes via:
+#     - Environment variable:  PARAMO__backtest__DATA_DIR=/mnt/trading/ticker_data
+#     - CLI override:          --override backtest.DATA_DIR=/mnt/trading/ticker_data
 # =====================================================
 
 import os
@@ -157,9 +163,9 @@ class RiskConfig:
     MAX_POSITION_SIZE_PERCENT: float = 75.0
     MAX_DAILY_LOSS_PERCENT: float = 6.0
     MAX_CONCURRENT_POSITIONS: int = 3
-    MAX_SECTOR_EXPOSURE: float = 0.50        # strategy/risk_manager.py:378
-    MAX_DRAWDOWN_PERCENT: float = 20.0       # strategy/risk_manager.py:262
-    MAX_PORTFOLIO_HEAT_PERCENT: float = 6.0  # strategy/risk_manager.py (portfolio heat gate)
+    MAX_SECTOR_EXPOSURE: float = 0.50
+    MAX_DRAWDOWN_PERCENT: float = 20.0
+    MAX_PORTFOLIO_HEAT_PERCENT: float = 6.0
 
     # Slippage simulation (backtest only)
     ENABLE_SLIPPAGE: bool = False
@@ -169,17 +175,25 @@ class RiskConfig:
     SLIPPAGE_STOP_NORMAL_PCT: float = 0.08
     SLIPPAGE_GAP_THRESHOLD: float = 200.0
 
+    # Re-entry: allow a second entry on the same stock after the initial position closes.
+    ENABLE_REENTRY: bool = False
+    MAX_REENTRIES_PER_STOCK: int = 1
+    REENTRY_COOLDOWN_MINUTES: int = 30
+
+    # Enhanced slippage for entry execution
+    ENTRY_SLIPPAGE_PCT: float = 0.005
+    ENTRY_SLIPPAGE_HIGH_GAP_PCT: float = 0.015
+
 @dataclass(frozen=True)
 class SystemConfig:
     """System / infrastructure parameters."""
     SCAN_INTERVAL_SECONDS: int = 30
-    MAX_API_RETRIES: int = 3
+    MAX_RETRIES: int = 3
     API_RETRY_DELAY: int = 2
     LOG_LEVEL: str = 'DEBUG'
-    MAX_RETRIES: int = 3
 
-    DATABASE_PATH: str = 'trading_system.db'  # core/monitor.py:22
-    BATCH_SIZE: int = 100                      # data_handler/api.py:95
+    DATABASE_PATH: str = 'trading_system.db'
+    BATCH_SIZE: int = 100
 
     LOG_PROGRESS_EVERY_N_SYMBOLS: int = 10
     LOG_DAILY_SUMMARY: bool = True
@@ -192,7 +206,8 @@ class SystemConfig:
     CLEAR_CACHE_BETWEEN_DAYS: bool = True
     USE_FILE_INDEX_CACHE: bool = True
 
-    REPORTS_DIR: str = r"S:\trading\reports"
+    # Override via: PARAMO__system__REPORTS_DIR=/absolute/path
+    REPORTS_DIR: str = 'reports'
 
 @dataclass(frozen=True)
 class MarketContextConfig:
@@ -201,7 +216,8 @@ class MarketContextConfig:
     VIX_SYMBOL: str = 'VIX'
     RUT_SYMBOL: str = 'RUT'
 
-    CSV_DIR: str = r'S:\trading\market_context'
+    # Override via: PARAMO__market_context__CSV_DIR=/absolute/path
+    CSV_DIR: str = 'data/market_context'
 
     SMA_FAST: int = 5
     SMA_SLOW: int = 20
@@ -236,10 +252,14 @@ class BacktestConfig:
     END_DATE: str = '2024-01-31'
     INITIAL_CAPITAL: float = 1000.0
 
-    BASE_DATA_DIR: str = r'S:\trading'
-    DATA_DIR: str = r'S:\trading\ticker_data'
-    NEWS_DATA_DIR: str = r'S:\trading\news_data'
-    DAILY_AGGREGATES_DIR: str = r'S:\trading\daily_aggregates'
+    # All paths default to relative locations under the working directory.
+    # Override a single root and the sub-paths via env vars or CLI overrides, e.g.:
+    #   PARAMO__backtest__BASE_DATA_DIR=/mnt/trading
+    #   PARAMO__backtest__DATA_DIR=/mnt/trading/ticker_data
+    BASE_DATA_DIR: str = 'data'
+    DATA_DIR: str = 'data/ticker_data'
+    NEWS_DATA_DIR: str = 'data/news_data'
+    DAILY_AGGREGATES_DIR: str = 'data/daily_aggregates'
 
     INTRADAY: bool = True
     INTRADAY_TIMEFRAME: str = '1Min'
@@ -257,10 +277,6 @@ class BacktestConfig:
 
     FAST_MODE: bool = False
     LOG_LEVEL_OVERRIDE: Optional[str] = None
-
-    # Re-entry: allow a second entry on the same stock after the initial position closes.
-    # Set True to enable; wire into screener/core.py and core/trade_executor.py.
-    ENABLE_REENTRY: bool = False
 
     # SIMPLE_STOPS: use fixed-% stop instead of ATR trailing (backtester/exit_simulator.py:54)
     SIMPLE_STOPS: bool = False

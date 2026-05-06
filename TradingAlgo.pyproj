@@ -50,7 +50,14 @@ NEWS_API_KEY=d55ded5ee2014b8c9b50c7e81ef48dc6</Environment>
     <Compile Include="strategy\claude_pattern_analyzer.py" />
     <Compile Include="strategy\dual_pattern_analyzer.py" />
     <Compile Include="temp.py" />
+    <Compile Include="tests\test_config_loader.py" />
     <Compile Include="tests\test_dual_pattern_analyzer.py" />
+    <Compile Include="tests\test_helpers.py" />
+    <Compile Include="tests\test_monitor.py" />
+    <Compile Include="tests\test_pattern_analyzer.py" />
+    <Compile Include="tests\test_risk_manager_pure.py" />
+    <Compile Include="tests\test_screener_core.py" />
+    <Compile Include="tests\test_trade_simulator_validation.py" />
     <Compile Include="utils\trade_metrics.py" />
     <Compile Include="utils\cli_common.py" />
     <Compile Include="config\config.py" />
@@ -109,6 +116,7 @@ NEWS_API_KEY=d55ded5ee2014b8c9b50c7e81ef48dc6</Environment>
   </ItemGroup>
   <ItemGroup>
     <Content Include=".github\copilot-instructions.md" />
+    <Content Include="ini pytest.ini" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

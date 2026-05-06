@@ -14,16 +14,13 @@ from utils.helpers import log_and_return
 import yfinance as yf
 from data_handler.gap_calculator import GapCalculator
 
-def log_data_error(logger, msg, exc):
-    logger.error(f"{msg}: {exc}")
-
 def fetch_bars(api, symbol, timeframe, limit, logger):
     """Helper to fetch bars with error handling."""
     try:
         bars = api.get_bars(symbol, timeframe, limit=limit, end=datetime.now()).df
         return bars
     except Exception as e:
-        log_data_error(logger, f"Error fetching bars for {symbol}", e)
+        logger.error("Error fetching bars for %s: %s", symbol, e)
         return pd.DataFrame()
 
 class APIDataHandler:
@@ -42,7 +39,7 @@ class APIDataHandler:
         self._cache = {}
         self._last_update = {}
         
-        # ✅ Initialize GapCalculator for live mode (deferred - universe loaded later)
+        # NOTE: Initialize GapCalculator for live mode (deferred - universe loaded later)
         self.gap_calculator = None
     
     def get_universe(self) -> pd.DataFrame:
@@ -70,13 +67,13 @@ class APIDataHandler:
                         df['symbol'] = df['symbol'].str.upper()
                         self.logger.info(f"Loaded universe from {symbols_csv}: {len(df)} symbols")
                         
-                        # ✅ After loading universe, initialize gap calculator
+                        # NOTE: After loading universe, initialize gap calculator
                         if self.gap_calculator is None and not df.empty:
                             universe_symbols = set(df['symbol'].unique())
                             self.gap_calculator = GapCalculator(
                                 get_daily_stats_func=self._get_daily_stats_from_api,
                                 file_index=None,  # No file index for live
-                                universe_symbols=universe_symbols  # ✅ Pass universe
+                                universe_symbols=universe_symbols  # NOTE: Pass universe
                             )
                             self.logger.info(f"Initialized gap calculator with {len(universe_symbols)} symbols")
                         

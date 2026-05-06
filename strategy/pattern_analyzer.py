@@ -10,9 +10,40 @@ from config import TradingConfig
 from data_handler.api import APIDataHandler
 from data_handler.local import LocalDataHandler
 from utils.logging import get_logger
+from collections import OrderedDict
 
-def log_pattern_error(logger, msg, exc):
-    logger.error(f"{msg}: {exc}")
+# Returned in place of a real detector result when the detector's confluence
+# weight is 0.0 — avoids running expensive computation that contributes nothing.
+_DETECTOR_DISABLED: Dict = {'detected': False, 'strength': 0, 'disabled': True}
+
+class _LRUCache:
+    """Fixed-capacity LRU cache backed by OrderedDict."""
+
+    def __init__(self, maxsize: int = 512):
+        self._maxsize = maxsize
+        self._store: OrderedDict = OrderedDict()
+
+    def get(self, key):
+        if key not in self._store:
+            return None
+        self._store.move_to_end(key)
+        return self._store[key]
+
+    def put(self, key, value) -> None:
+        if key in self._store:
+            self._store.move_to_end(key)
+        self._store[key] = value
+        if len(self._store) > self._maxsize:
+            self._store.popitem(last=False)  # evict oldest
+
+    def __contains__(self, key):
+        return key in self._store
+
+    def __len__(self):
+        return len(self._store)
+
+    def clear(self) -> None:
+        self._store.clear()
 
 class PatternAnalyzer:
     """Advanced pattern recognition for parabolic momentum with multiple pattern types"""
@@ -22,7 +53,7 @@ class PatternAnalyzer:
         self.data_handler = data_handler
         self.logger = get_logger(__name__, component="pattern_analyzer")
         self.pattern_library = self._build_pattern_library()
-        self.pattern_cache = {}
+        self.pattern_cache = _LRUCache(maxsize=512)
         self.cache_hits = 0
         self.cache_misses = 0
 
@@ -43,7 +74,7 @@ class PatternAnalyzer:
             }
         }
 
-    def analyze_pattern(self, symbol: str, bars: Optional[pd.DataFrame] = None, 
+    def analyze_pattern(self, symbol: str, bars: Optional[pd.DataFrame] = None,
                    cache_key: Optional[str] = None,
                    is_premarket: bool = False,
                    gap_percent: Optional[float] = None) -> Dict:
@@ -56,7 +87,7 @@ class PatternAnalyzer:
             else:
                 volume_mult_adjustment = 1.0
                 min_patterns_required = self.config.pattern.CONFLUENCE_MIN_PATTERNS
-        
+
             if cache_key is None and bars is not None and not bars.empty:
                 if 'timestamp' in bars.columns:
                     first_ts = bars['timestamp'].iloc[0]
@@ -64,14 +95,16 @@ class PatternAnalyzer:
                     cache_key = f"{symbol}_{first_ts}_{last_ts}_{len(bars)}"
                 else:
                     cache_key = None
-        
+
             # Check cache
-            if cache_key and cache_key in self.pattern_cache:
-                self.cache_hits += 1
-                return self.pattern_cache[cache_key]
-            
+            if cache_key:
+                cached = self.pattern_cache.get(cache_key)
+                if cached is not None:
+                    self.cache_hits += 1
+                    return cached
+
             self.cache_misses += 1
-            
+
             if bars is None:
                 bars = self.data_handler.get_intraday_bars(symbol, '1Min', 390)
             if bars is None or bars.empty or len(bars) < 30:
@@ -82,23 +115,36 @@ class PatternAnalyzer:
             if zero_vol_count > 0:
                 zero_vol_pct = (zero_vol_count / len(bars)) * 100
                 self.logger.debug(
-                    f"{symbol}: {zero_vol_count}/{len(bars)} bars ({zero_vol_pct:.1f}%) "
-                    f"have zero volume (normal for low-volume periods)"
+                    "%s: %d/%d bars (%.1f%%) have zero volume (normal for low-volume periods)",
+                    symbol, zero_vol_count, len(bars), zero_vol_pct
                 )
-        
+
             # Work on a local copy
             bars = bars.copy()
 
-            step_up = self._analyze_step_ups(bars)
-            volume = self._analyze_volume_pattern(bars)
-            sr = self._analyze_support_resistance(bars)
-            parabolic = self._detect_parabolic_spike(bars, volume_mult_factor=volume_mult_adjustment)
-            breakout = self._detect_breakout(bars)
+            pc = self.config.pattern
+
+            step_up  = self._analyze_step_ups(bars)
+            volume   = self._analyze_volume_pattern(bars)
+            sr       = self._analyze_support_resistance(bars)
+
+            # Only run detectors whose confluence weight is non-zero
+            parabolic = (
+                self._detect_parabolic_spike(bars, volume_mult_factor=volume_mult_adjustment)
+                if pc.CONFLUENCE_WEIGHT_PARABOLIC > 0
+                else _DETECTOR_DISABLED
+            )
+            breakout = (
+                self._detect_breakout(bars)
+                if pc.CONFLUENCE_WEIGHT_BREAKOUT > 0
+                else _DETECTOR_DISABLED
+            )
+
             confluence = self._calculate_pattern_confluence(step_up, parabolic, breakout, volume, sr)
-            
-            # ✅ NEW: Dynamic minimum score based on gap percentage
+
+            # Dynamic minimum score based on gap percentage
             min_score = self._get_dynamic_min_score(gap_percent)
-            
+
             is_valid = (confluence['total_score'] >= min_score and
                        confluence['pattern_count'] >= min_patterns_required)
 
@@ -119,69 +165,29 @@ class PatternAnalyzer:
                 else:
                     failure_reason = 'pattern_invalid'
 
-                # Step-up sub-reasons (most common failure path)
                 su = step_up
                 step_sub = []
-                if su.get('step_count', 0) < self.config.pattern.MIN_STEP_UPS:
+                if su.get('step_count', 0) < pc.MIN_STEP_UPS:
                     step_sub.append(
-                        f"step_count={su.get('step_count', 0)}<{self.config.pattern.MIN_STEP_UPS}"
+                        f"step_count={su.get('step_count', 0)}<{pc.MIN_STEP_UPS}"
                     )
-                if su.get('retention_rate', 0) < self.config.pattern.MIN_ADVANCE_RETENTION:
+                if su.get('retention_rate', 0) < pc.MIN_ADVANCE_RETENTION:
                     step_sub.append(
-                        f"retention={su.get('retention_rate', 0):.1f}%<{self.config.pattern.MIN_ADVANCE_RETENTION}%"
+                        f"retention={su.get('retention_rate', 0):.1f}%<{pc.MIN_ADVANCE_RETENTION}%"
                     )
                 if step_sub:
                     failure_reason += '|step_up:' + ','.join(step_sub)
             else:
                 failure_reason = None
-            
-            result = {
-                'valid':                  is_valid,
-                'reason':                 failure_reason,
-                'symbol':                 symbol,
-                'pattern_strength':       confluence['total_score'],
-                'patterns_detected':      confluence['patterns_detected'],
-                'pattern_count':          confluence['pattern_count'],
-                'min_score_threshold':    min_score,
-                'gap_percent':            gap_percent,
-                'step_ups':               step_up,
-                'parabolic':              parabolic,
-                'breakout':               breakout,
-                'volume':                 volume,
-                'support_resistance':     sr,
-                'timestamp':              datetime.now(),
-                'is_premarket_analyzed':  is_premarket,
-                # ── Entry lag audit fields ──────────────────────────────────────
-                'first_signal_bar_idx':   first_signal_bar_idx,   # bar where threshold first crossed
-                'first_signal_ts_et':     first_signal_ts.strftime('%H:%M ET') if first_signal_ts else None,
-                'entry_lag_bars':         entry_lag_bars,         # bars between first signal and warmup end
-            }
-            
-            # ✅ FIXED: Safe string formatting for gap_percent
-            gap_str = f"{gap_percent:.1f}%" if gap_percent is not None else "N/A"
-            
-            self.logger.info(
-                f"Pattern analyzed {symbol}: valid={is_valid} "
-                f"strength={result['pattern_strength']:.2f} "
-                f"min_threshold={min_score:.1f} (gap={gap_str}) "
-                f"patterns={result['patterns_detected']}"
-            )
-            
-            # Cache result
-            if cache_key:
-                if len(self.pattern_cache) > 1000:
-                    for key in list(self.pattern_cache.keys())[:100]:
-                        del self.pattern_cache[key]
-                self.pattern_cache[cache_key] = result
-            
-            # ── First-qualifying-bar detection (for entry lag audit) ──────────────
+
+            # ── First-qualifying-bar detection (must run BEFORE result dict) ──
             first_signal_bar_idx = -1
             first_signal_ts      = None
             entry_lag_bars       = None
 
             if is_valid:
                 first_signal_bar_idx = self._find_first_qualifying_bar(bars)
-                last_bar_idx         = len(bars) - 1   # warmup - 1 in caller
+                last_bar_idx         = len(bars) - 1
 
                 if first_signal_bar_idx >= 0 and 'timestamp' in bars.columns:
                     raw_ts = bars.iloc[first_signal_bar_idx]['timestamp']
@@ -200,37 +206,71 @@ class PatternAnalyzer:
 
                     if entry_lag_bars > 0:
                         self.logger.warning(
-                            f"[ENTRY LAG] {symbol}: pattern first qualified at bar {first_signal_bar_idx} "
-                            f"({first_signal_ts.strftime('%H:%M ET')}) "
-                            f"but warmup window ends at bar {last_bar_idx} "
-                            f"({last_bar_ts.strftime('%H:%M ET')}) — "
-                            f"{entry_lag_bars} bar lag ({entry_lag_bars} min stale)"
+                            "[ENTRY LAG] %s: pattern first qualified at bar %d (%s) "
+                            "but warmup window ends at bar %d (%s) — %d bar lag (%d min stale)",
+                            symbol, first_signal_bar_idx,
+                            first_signal_ts.strftime('%H:%M ET'),
+                            last_bar_idx, last_bar_ts.strftime('%H:%M ET'),
+                            entry_lag_bars, entry_lag_bars
                         )
                     else:
                         self.logger.debug(
-                            f"[ENTRY LAG] {symbol}: pattern qualified at final warmup bar — no lag"
+                            "[ENTRY LAG] %s: pattern qualified at final warmup bar — no lag",
+                            symbol
                         )
-            
+
+            result = {
+                'valid':                  is_valid,
+                'reason':                 failure_reason,
+                'symbol':                 symbol,
+                'pattern_strength':       confluence['total_score'],
+                'patterns_detected':      confluence['patterns_detected'],
+                'pattern_count':          confluence['pattern_count'],
+                'min_score_threshold':    min_score,
+                'gap_percent':            gap_percent,
+                'step_ups':               step_up,
+                'parabolic':              parabolic,
+                'breakout':               breakout,
+                'volume':                 volume,
+                'support_resistance':     sr,
+                'timestamp':              datetime.now(),
+                'is_premarket_analyzed':  is_premarket,
+                # ── Entry lag audit fields ──
+                'first_signal_bar_idx':   first_signal_bar_idx,
+                'first_signal_ts_et':     first_signal_ts.strftime('%H:%M ET') if first_signal_ts else None,
+                'entry_lag_bars':         entry_lag_bars,
+            }
+
+            gap_str = f"{gap_percent:.1f}%" if gap_percent is not None else "N/A"
+            self.logger.info(
+                "Pattern analyzed %s: valid=%s strength=%.2f min_threshold=%.1f (gap=%s) patterns=%s",
+                symbol, is_valid, result['pattern_strength'], min_score,
+                gap_str, result['patterns_detected']
+            )
+
+            # Cache result
+            if cache_key:
+                self.pattern_cache.put(cache_key, result)
+
             return result
         except Exception as e:
-            log_pattern_error(self.logger, f"Error analyzing pattern for {symbol}", e)
+            self.logger.error("Error analyzing pattern for %s: %s", symbol, e)
             return {'valid': False, 'reason': str(e)}
-    
+
     def _get_dynamic_min_score(self, gap_percent: Optional[float]) -> float:
         """
         Calculate dynamic minimum score threshold based on gap percentage.
-        
+
         Logic:
         - gap >= 100%: min_score = 5.0  (extreme gap, very low bar)
         - gap >= 50%:  min_score = 10.0 (large gap, moderate bar)
         - gap < 50%:   min_score = 15.0 (normal gap, standard bar)
         """
         if gap_percent is None:
-            # Fallback to normal threshold if gap not provided
             return self.config.pattern.CONFLUENCE_NORMAL_GAP_MIN_SCORE
-        
+
         pc = self.config.pattern
-        
+
         if gap_percent >= pc.CONFLUENCE_EXTREME_GAP_THRESHOLD:
             return pc.CONFLUENCE_EXTREME_GAP_MIN_SCORE
         elif gap_percent >= pc.CONFLUENCE_LARGE_GAP_THRESHOLD:
@@ -240,10 +280,10 @@ class PatternAnalyzer:
 
     def analyze_pattern_fast(self, symbol: str, gap_percent: float, volume_ratio: float) -> Dict:
         """Simplified pattern analysis for fast backtesting."""
-        
+
         # Simple scoring based on gap and volume
         score = 0
-        
+
         # Gap contribution (50%)
         if gap_percent >= 200:
             score += 50
@@ -251,7 +291,7 @@ class PatternAnalyzer:
             score += 30
         elif gap_percent >= 50:
             score += 20
-        
+
         # Volume contribution (50%)
         if volume_ratio >= 10:
             score += 50
@@ -259,7 +299,7 @@ class PatternAnalyzer:
             score += 30
         elif volume_ratio >= 2:
             score += 20
-        
+
         return {
             'valid': score >= 70,
             'symbol': symbol,
@@ -324,36 +364,33 @@ class PatternAnalyzer:
             prev_volume = bars['volume'].iloc[-30:-10].mean()
             volume_multiplier = recent_volume / prev_volume * volume_mult_factor if prev_volume > 0 else 0
             cfg = self.pattern_library['parabolic_spike']
-            
-            # ✅ NEW: Check both minimum and maximum angle thresholds
-            angle_valid = (angle >= cfg['min_angle'] and 
+
+            angle_valid = (angle >= cfg['min_angle'] and
                           angle <= self.config.pattern.PARABOLIC_MAX_ANGLE)
-            
-            detected = (angle_valid and 
-                       acceleration >= cfg['min_acceleration'] and 
+
+            detected = (angle_valid and
+                       acceleration >= cfg['min_acceleration'] and
                        volume_multiplier >= cfg['volume_multiplier'])
-            
-            # ✅ IMPROVED: Cap strength score at PARABOLIC_MAX_SCORE
+
             raw_strength = (angle / 90) * 50 + (volume_multiplier / 10) * 50 if detected else 0
             strength = min(self.config.pattern.PARABOLIC_MAX_SCORE, raw_strength)
-            
-            # ✅ NEW: Log when rejected due to excessive angle
+
             if not angle_valid and angle > self.config.pattern.PARABOLIC_MAX_ANGLE:
                 self.logger.debug(
-                    f"Parabolic pattern rejected: angle {angle:.2f}° exceeds maximum "
-                    f"{self.config.pattern.PARABOLIC_MAX_ANGLE:.2f}° (potentially unsustainable)"
+                    "Parabolic pattern rejected: angle %.2f° exceeds maximum %.2f° (potentially unsustainable)",
+                    angle, self.config.pattern.PARABOLIC_MAX_ANGLE
                 )
-            
+
             return {
                 'detected': detected,
                 'angle': angle,
                 'acceleration': acceleration,
                 'volume_multiplier': volume_multiplier,
                 'strength': strength,
-                'angle_valid': angle_valid  # ✅ NEW: Track validity separately
+                'angle_valid': angle_valid
             }
         except Exception as e:
-            self.logger.debug(f"Error detecting parabolic spike: {e}")
+            self.logger.debug("Error detecting parabolic spike: %s", e)
             return {'detected': False, 'strength': 0}
 
     def _detect_breakout(self, bars: pd.DataFrame) -> Dict:
@@ -383,14 +420,13 @@ class PatternAnalyzer:
                 'strength': strength
             }
         except Exception as e:
-            self.logger.debug(f"Error detecting breakout: {e}")
+            self.logger.debug("Error detecting breakout: %s", e)
             return {'detected': False, 'strength': 0}
 
     def _analyze_volume_pattern(self, bars: pd.DataFrame) -> Dict:
         if bars.empty:
             return {'volume_trend': 'unknown', 'avg_volume': 0, 'strength': 0}
 
-        # Use all bars for volume analysis
         vol_ma_5 = bars['volume'].rolling(5, min_periods=1).mean()
         vol_ma_15 = bars['volume'].rolling(15, min_periods=1).mean()
 
@@ -413,8 +449,8 @@ class PatternAnalyzer:
             strength = 30
 
         high_volume_correlation = self._calculate_high_volume_correlation(bars)
-        strength = max(0, (strength + high_volume_correlation) / 2)  # Never go negative
-        
+        strength = max(0, (strength + high_volume_correlation) / 2)
+
         return {
             'volume_trend': volume_trend,
             'avg_volume': bars['volume'].mean(),
@@ -425,7 +461,6 @@ class PatternAnalyzer:
 
     def _calculate_high_volume_correlation(self, bars: pd.DataFrame) -> float:
         try:
-            # Compute as a local boolean Series; do not assign back into bars
             new_high = bars['high'] == bars['high'].expanding().max()
             high_bars = bars.loc[new_high]
             other_bars = bars.loc[~new_high]
@@ -435,7 +470,8 @@ class PatternAnalyzer:
                 if other_avg_volume > 0:
                     return max(0, min((high_avg_volume / other_avg_volume - 1) * 100, 100))
             return 0
-        except Exception:
+        except Exception as e:
+            self.logger.debug("_calculate_high_volume_correlation failed (bars=%d): %s", len(bars), e)
             return 0
 
     def _analyze_support_resistance(self, bars: pd.DataFrame) -> Dict:
@@ -474,33 +510,36 @@ class PatternAnalyzer:
     def _calculate_pattern_confluence(self, step_up: Dict, parabolic: Dict, breakout: Dict, volume: Dict, sr: Dict, gap_percent: Optional[float] = None) -> Dict:
         patterns_detected = []
         total_score = 0.0
-        
+
         pc = self.config.pattern
         weights = {
-            'step_up': pc.CONFLUENCE_WEIGHT_STEP_UP,
-            'parabolic': pc.CONFLUENCE_WEIGHT_PARABOLIC,
-            'breakout': pc.CONFLUENCE_WEIGHT_BREAKOUT,
-            'volume': pc.CONFLUENCE_WEIGHT_VOLUME,
+            'step_up':            pc.CONFLUENCE_WEIGHT_STEP_UP,
+            'parabolic':          pc.CONFLUENCE_WEIGHT_PARABOLIC,
+            'breakout':           pc.CONFLUENCE_WEIGHT_BREAKOUT,
+            'volume':             pc.CONFLUENCE_WEIGHT_VOLUME,
             'support_resistance': pc.CONFLUENCE_WEIGHT_SUPPORT_RESISTANCE
         }
-        
-        if step_up.get('detected', False):
+
+        if step_up.get('detected', False) and weights['step_up'] > 0:
             patterns_detected.append('step_up')
             total_score += step_up.get('strength', 0) * weights['step_up']
-        if parabolic.get('detected', False):
+        # parabolic and breakout are only reached here if their detectors ran
+        # (weight > 0). _DETECTOR_DISABLED always has detected=False, so the
+        # guard is strictly for correctness when a custom weight is set > 0.
+        if parabolic.get('detected', False) and weights['parabolic'] > 0:
             patterns_detected.append('parabolic')
             total_score += parabolic.get('strength', 0) * weights['parabolic']
-        if breakout.get('detected', False):
+        if breakout.get('detected', False) and weights['breakout'] > 0:
             patterns_detected.append('breakout')
             total_score += breakout.get('strength', 0) * weights['breakout']
         total_score += volume.get('strength', 0) * weights['volume']
         total_score += sr.get('strength', 0) * weights['support_resistance']
-        
+
         # Normalize score to 0-100 based on active (non-zero) weights only
         active_weight_sum = sum(w for w in weights.values() if w > 0)
         normalized_score = (total_score / active_weight_sum) if active_weight_sum > 0 else 0.0
         normalized_score = max(0.0, min(100.0, normalized_score))
-        
+
         # Apply extreme gap penalty if enabled
         penalty_applied = 1.0
         if pc.EXTREME_GAP_PENALTY_ENABLED and gap_percent is not None:
@@ -512,32 +551,32 @@ class PatternAnalyzer:
                 penalty_applied = pc.EXTREME_GAP_2000_PENALTY
             if penalty_applied < 1.0:
                 self.logger.debug(
-                    f"Gap penalty applied: {gap_percent:.1f}% gap "
-                    f"→ {penalty_applied:.1%} multiplier (score reduced from "
-                    f"{normalized_score:.2f} to {normalized_score * penalty_applied:.2f})"
+                    "Gap penalty applied: %.1f%% gap → %.1f%% multiplier "
+                    "(score reduced from %.2f to %.2f)",
+                    gap_percent, penalty_applied * 100,
+                    normalized_score, normalized_score * penalty_applied
                 )
-        
+
         final_score = normalized_score * penalty_applied
-        
+
         return {
-            'patterns_detected': patterns_detected,
-            'pattern_count': len(patterns_detected),
-            'total_score': final_score,
+            'patterns_detected':   patterns_detected,
+            'pattern_count':       len(patterns_detected),
+            'total_score':         final_score,
             'score_before_penalty': normalized_score,
             'gap_penalty_applied': penalty_applied
         }
 
     def _find_first_qualifying_bar(self, bars: pd.DataFrame) -> int:
         """
-        Return the bar index (0-based) at which the step-up pattern first
-        satisfies both MIN_STEP_UPS and MIN_ADVANCE_RETENTION thresholds.
-        Returns -1 if conditions are never met across the full window.
+        Returns the index of the bar that CONFIRMS the qualifying pattern
+        (i.e. the bar after the final pivot high is established).
+        Entry fill should be at this index + 1 (next bar's open).
         """
         pc = self.config.pattern
         min_steps     = pc.MIN_STEP_UPS
         min_retention = pc.MIN_ADVANCE_RETENTION
 
-        # Need at least 3 bars to find a local high
         for end_idx in range(3, len(bars) + 1):
             window = bars.iloc[:end_idx]
             highs, lows = self._find_highs_lows(window)
@@ -546,6 +585,5 @@ class PatternAnalyzer:
             step_count, total_advance, total_retained = self._count_step_ups(window, highs, lows)
             retention = (total_retained / total_advance * 100) if total_advance > 0 else 0
             if step_count >= min_steps and retention >= min_retention:
-                return end_idx - 1   # bar index (0-based) where threshold crossed
-
+                return end_idx - 1
         return -1

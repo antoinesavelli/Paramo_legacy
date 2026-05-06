@@ -42,7 +42,7 @@ class MarketContext:
             self.last_update = datetime.now()
             return context
         except Exception as e:
-            self.logger.error(f"Error updating market context: {e}")
+            self.logger.error("Error updating market context: %s", e)
             return self.market_indicators
 
     def _analyze_spy_trend(self) -> Dict:
