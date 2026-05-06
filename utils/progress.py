@@ -133,12 +133,16 @@ class BacktestProgressTracker:
             f"{self._format_time(est_remaining)} remaining"
         )
         
-        # Clear previous lines and print
-        sys.stdout.write('\033[K')  # Clear to end of line
-        sys.stdout.write('\033[F' * 3)  # Move up 3 lines
-        sys.stdout.write('\033[K')  # Clear line
-        sys.stdout.write(output)
-        sys.stdout.flush()
+        # Clear previous lines and print — guard against terminals that cannot
+        # encode Unicode block characters (e.g. Windows cp1252).
+        try:
+            sys.stdout.write('\033[K')  # Clear to end of line
+            sys.stdout.write('\033[F' * 3)  # Move up 3 lines
+            sys.stdout.write('\033[K')  # Clear line
+            sys.stdout.write(output)
+            sys.stdout.flush()
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass  # Skip progress display on non-Unicode terminals
     
     def finalize(self, total_trades: int, final_capital: float):
         """Display final completion message."""
@@ -157,8 +161,11 @@ class BacktestProgressTracker:
             f"  Total time: {self._format_time(elapsed)}\n"
         )
         
-        sys.stdout.write(output)
-        sys.stdout.flush()
+        try:
+            sys.stdout.write(output)
+            sys.stdout.flush()
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass  # Skip progress display on non-Unicode terminals
         print()  # Add newline
     
     @staticmethod

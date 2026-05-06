@@ -1,12 +1,12 @@
 # =====================================================
-# run.live.py - Live Run Entry Point
+# run/live_entry.py - Live Run Entry Point
 # =====================================================
 
 import signal
 import sys
 import logging
 import argparse
-from run.trading_system import TradingSystem
+from run.live_engine import TradingSystem
 from run.cli import add_logging_args, configure_logging
 from config.loader import build_config
 

@@ -1,5 +1,5 @@
 # =====================================================
-# core.trading_system.py - Live Trading System Orchestrator
+# run/live_engine.py - Live Trading System Orchestrator
 # =====================================================
 
 from config.config import TradingConfig

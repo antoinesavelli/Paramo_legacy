@@ -179,7 +179,7 @@ class TradeSimulator:
         
         # Get all bars for entry bar identification
         all_bars = self.data_handler.get_intraday_bars(
-            symbol, '1Min', start=session_start_utc, end=session_end_utc
+            symbol, start=session_start_utc, end=session_end_utc
         )
         
         # Calculate entry metrics

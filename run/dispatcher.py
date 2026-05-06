@@ -1,11 +1,11 @@
 # =====================================================
-# run.main.py - Mode dispatcher
+# run/dispatcher.py - Mode dispatcher
 # =====================================================
 """
 Single entry point for both live and backtest modes.
 Toggle RUN_MODE in TradingConfig: 'backtest' | 'live'
 
-    python run/main.py
+    python run/dispatcher.py
 """
 
 import sys
@@ -37,10 +37,10 @@ def main():
     logging.getLogger("run").info(f"RUN_MODE = {mode}")
 
     if mode == 'live':
-        from run.live import main as run_live
+        from run.live_entry import main as run_live
         sys.exit(run_live())
     elif mode == 'backtest':
-        from run.backtest import main as run_backtest
+        from run.backtest_entry import main as run_backtest
         sys.exit(run_backtest())
     else:
         print(f"Unknown RUN_MODE '{mode}'. Must be 'live' or 'backtest'.")
