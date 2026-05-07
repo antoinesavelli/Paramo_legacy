@@ -32,17 +32,16 @@ class ScreenerWarningFilter(logging.Filter):
         "No aggregate data for",
         "No previous day data found within 7 days",
         "No gaps calculated for",
-        "No candidates meeting gap threshold"
     ]
     
     def filter(self, record):
         """Return False to suppress the log record."""
         # Only filter screener.backtest warnings
         if record.name == "screener.backtest" and record.levelno == logging.WARNING:
-            # Check if message contains any suppressed pattern
-            for pattern in self.SUPPRESSED_MESSAGES:
-                if pattern in record.getMessage():
-                    return False  # Suppress this message
+            msg = record.getMessage()
+            # any() short-circuits on first match — efficient at high volume (L11)
+            if any(pattern in msg for pattern in self.SUPPRESSED_MESSAGES):
+                return False  # Suppress this message
         return True  # Allow all other messages
 
 
@@ -56,6 +55,8 @@ def add_logging_args(p: argparse.ArgumentParser):
                    help="Optimize logging for backtest performance (default: normal for full diagnostics)")
     p.add_argument("--show-screener-warnings", action="store_true",
                    help="Show repetitive screener warnings in console (default: suppressed, but logged to file)")
+    p.add_argument("--log-file", default="run.log",
+                   help="Path to log file (default: run.log)")
 
 
 def configure_logging(level: str, log_file: str = None, optimize: str = None, show_screener_warnings: bool = False):

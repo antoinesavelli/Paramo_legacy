@@ -15,12 +15,13 @@ Performance optimizations:
 
 import pandas as pd
 import numpy as np
+import logging
+from utils.logging import get_logger
 from pathlib import Path
 from typing import Dict, Set, Optional, Tuple
 from datetime import datetime
-import logging
 
-logger = logging.getLogger("data_handler.aggregate_prefilter")
+logger = get_logger(__name__)
 
 
 class AggregatePreFilter:

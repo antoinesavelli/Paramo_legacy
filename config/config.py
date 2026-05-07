@@ -51,6 +51,10 @@ class ScreeningConfig:
     ENABLE_FLOAT_FILTER: bool = True
     ENABLE_MARKETCAP_FILTER: bool = True
 
+    # Corporate action filter — skip symbols with a split effective on the scan date.
+    # Prevents reverse splits (e.g. 1:10 → +900% price) from firing false gap-up signals.
+    FILTER_SPLIT_DAYS: bool = True
+
     # Cumulative volume tracking (intraday files)
     CUMULATIVE_VOLUME: bool = False
 
@@ -218,6 +222,12 @@ class SystemConfig:
     # a terminal state (filled/canceled/rejected/expired) or the timeout fires.
     ORDER_POLL_INTERVAL_SECONDS: float = 0.2   # 200 ms between polls
     ORDER_FILL_TIMEOUT_SECONDS: float = 5.0    # give up waiting after 5 s
+
+    # Total tradeable minutes in a regular NYSE session (09:30–16:00)
+    TRADING_DAY_MINUTES: int = 390
+
+    # Default cache directory for FileIndexCache (portable relative path)
+    FILE_INDEX_CACHE_DIR: str = 'data/cache/file_index'
 
 @dataclass(frozen=True)
 class MarketContextConfig:

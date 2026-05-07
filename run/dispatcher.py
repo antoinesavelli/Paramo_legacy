@@ -11,6 +11,7 @@ Toggle RUN_MODE in TradingConfig: 'backtest' | 'live'
 import sys
 import logging
 from config.loader import build_config
+from utils.logging import get_logger
 
 
 def main():
@@ -34,7 +35,7 @@ def main():
         print("ERROR: RUN_MODE not set in TradingConfig. Add RUN_MODE = 'backtest' or 'live'.")
         sys.exit(1)
     mode = mode.strip().lower()
-    logging.getLogger("run").info(f"RUN_MODE = {mode}")
+    get_logger("run").info("RUN_MODE = %s", mode)
 
     if mode == 'live':
         from run.live_entry import main as run_live

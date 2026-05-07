@@ -17,14 +17,15 @@ Performance improvements:
 FILE FORMAT: YYYY-MM-DD.parquet (ISO date format)
 """
 
+import logging
+from utils.logging import get_logger
 import pandas as pd
 import pickle
 from pathlib import Path
 from typing import Dict, Set, Optional, Tuple, List
 from datetime import datetime, timedelta
-import logging
 
-logger = logging.getLogger("data_handler.file_index_cache")
+logger = get_logger(__name__)
 
 
 class FileIndexCache:
@@ -56,11 +57,12 @@ class FileIndexCache:
     def __init__(self, cache_dir: Optional[str] = None):
         """
         Args:
-            cache_dir: Directory to store cache files (default: S:\\trading\\ticker_data\\cached_dateranges)
+            cache_dir: Directory to store cache files.
+                       Default is a portable relative path; override via
+                       config.system.FILE_INDEX_CACHE_DIR or pass explicitly.
         """
         if cache_dir is None:
-            # Default to trading/ticker_data/cached_dateranges
-            cache_dir = r"S:\trading\ticker_data\cached_dateranges"
+            cache_dir = "data/cache/file_index"
         
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -273,7 +275,11 @@ def create_index_for_backtest(config) -> Dict:
     Returns:
         Index data dict
     """
-    cache = FileIndexCache()
+    cache = FileIndexCache(
+        cache_dir=config.system.FILE_INDEX_CACHE_DIR
+        if hasattr(config, 'system') and hasattr(config.system, 'FILE_INDEX_CACHE_DIR')
+        else None
+    )
     
     data_dir = config.backtest.DATA_DIR
     aggregate_dir = Path(data_dir) / "daily_aggregates"

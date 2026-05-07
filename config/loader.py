@@ -5,7 +5,7 @@
 import os
 import json
 from dataclasses import is_dataclass, replace, asdict
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Optional
 from pathlib import Path
 from datetime import time, datetime
 from config import TradingConfig
@@ -134,7 +134,15 @@ def export_effective(cfg: TradingConfig, path: str):
 
 def build_config(cli_overrides: List[str] = None,
                  enable_env_layer: bool = True,
-                 export_path: str | None = None) -> TradingConfig:
+                 export_path: Optional[str] = None) -> TradingConfig:
+    """
+    Build the effective TradingConfig by applying override layers in order:
+      1. Dataclass defaults  (config/config.py)
+      2. Environment variables  (PARAMO__section__FIELD=value)
+      3. CLI overrides  (--override section.FIELD=value)
+      4. Config file  (custom_params.json, loaded by caller if desired)
+    validate_config() is always called before returning.
+    """
     cfg = TradingConfig()
     if enable_env_layer:
         cfg = apply_env_layer(cfg)

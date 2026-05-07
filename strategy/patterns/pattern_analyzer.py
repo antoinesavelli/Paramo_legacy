@@ -106,7 +106,11 @@ class PatternAnalyzer:
             self.cache_misses += 1
 
             if bars is None:
-                bars = self.data_handler.get_intraday_bars(symbol, '1Min', 390)
+                trading_day_minutes = getattr(
+                    getattr(self.config, 'system', None),
+                    'TRADING_DAY_MINUTES', 390
+                )
+                bars = self.data_handler.get_intraday_bars(symbol, '1Min', trading_day_minutes)
             if bars is None or bars.empty or len(bars) < 30:
                 return {'valid': False, 'reason': 'Insufficient data'}
 

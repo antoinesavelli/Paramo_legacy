@@ -6,6 +6,7 @@ import signal
 import sys
 import logging
 import argparse
+from utils.logging import get_logger
 from run.live_engine import TradingSystem
 from run.cli import add_logging_args, configure_logging
 from config.loader import build_config
@@ -27,8 +28,8 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    configure_logging(args.log_level, log_file="run.log")
-    logger = logging.getLogger("run_live")
+    configure_logging(args.log_level, log_file=getattr(args, 'log_file', 'run.log'))
+    logger = get_logger("run.live_entry")
 
     # Build config (includes validation)
     try:

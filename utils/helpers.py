@@ -167,3 +167,66 @@ def check_first_bar(data_dir, date_str, symbol, tz='US/Eastern'):
     if df.empty:
         logging.warning("check_first_bar: empty dataframe symbol=%s date=%s",
                         symbol, date_str)
+
+
+def log_api_error(logger, msg: str, exc: Exception) -> None:
+    """Log an API error with standard format. Centralizes error logging for API calls."""
+    logger.error("%s: %s", msg, exc)
+
+
+def log_db_error(logger, msg: str, exc: Exception) -> None:
+    """Log a database error with standard format. Centralizes error logging for DB calls."""
+    logger.error("%s: %s", msg, exc)
+
+
+def calc_gap_percent(price: float, prev_close: float) -> float:
+    """Calculate gap percentage from previous close. Canonical formula shared across modules."""
+    return ((price - prev_close) / prev_close) * 100.0
+
+
+def fetch_split_symbols(api, date: datetime) -> set:
+    """
+    Return the set of symbols that had a stock split effective on *date*.
+
+    Uses Alpaca's corporate_actions announcements endpoint (type=split).
+    Returns an empty set on any error so the screener never hard-fails.
+
+    Args:
+        api: Alpaca REST API client (tradeapi.REST instance)
+        date: The date to check for splits (only the date portion is used)
+    """
+    try:
+        date_str = pd.Timestamp(date).strftime('%Y-%m-%d')
+        # Alpaca corporate_actions endpoint: GET /v2/corporate_actions/announcements
+        # ca_types: R = reverse split, SS = stock split, SO = spinoff
+        params = {
+            'ca_types': 'R,SS',         # reverse splits + forward splits
+            'since': date_str,
+            'until': date_str,
+        }
+        announcements = _call_with_timeout_or_direct(api, params)
+        symbols = set()
+        for ann in announcements or []:
+            sym = getattr(ann, 'symbol', None) or (ann.get('symbol') if isinstance(ann, dict) else None)
+            if sym:
+                symbols.add(str(sym).upper())
+        return symbols
+    except Exception:
+        # Never let split-checking crash the screener
+        return set()
+
+
+def _call_with_timeout_or_direct(api, params: dict):
+    """Helper: call Alpaca announcements endpoint, handling both SDK and REST variants."""
+    import concurrent.futures
+    try:
+        # alpaca-trade-api SDK v2+: get_corporate_announcements
+        def _call():
+            return api.get_corporate_announcements(**params)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(_call).result(timeout=10.0)
+    except AttributeError:
+        # Older SDK doesn't have get_corporate_announcements — treat as no splits
+        return []
+    except Exception:
+        return []

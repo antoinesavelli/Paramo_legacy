@@ -21,10 +21,11 @@ import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict, List
 import logging
+from utils.logging import get_logger
 from pathlib import Path
 from collections import OrderedDict
 
-logger = logging.getLogger("data_handler.aggregate_handler")
+logger = get_logger(__name__)
 
 
 class AggregateDataHandler:

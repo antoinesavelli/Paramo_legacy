@@ -28,8 +28,10 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 import logging
+from utils.logging import get_logger
+from utils.helpers import calc_gap_percent
 
-logger = logging.getLogger("data_handler.adaptive_gap_monitor")
+logger = get_logger(__name__)
 
 
 class MonitoringTier:
@@ -254,7 +256,7 @@ class AdaptiveGapMonitor:
                 return None
             
             # Calculate gap %
-            gap_pct = ((current_price - prev_close) / prev_close) * 100.0
+            gap_pct = calc_gap_percent(current_price, prev_close)
             
             return {
                 'current_price': float(current_price),

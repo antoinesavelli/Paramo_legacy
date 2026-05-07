@@ -8,10 +8,9 @@ from datetime import datetime
 from config import TradingConfig
 from typing import Dict, Optional, List
 from utils.logging import get_logger
+from utils.helpers import log_db_error
 from monitoring.reporting import compute_statistics
 
-def log_db_error(logger, msg, exc):
-    logger.error("%s: %s", msg, exc)
 
 class Monitor:
     """System monitoring and performance tracking"""
@@ -82,6 +81,19 @@ class Monitor:
                         details TEXT
                     )
                 ''')
+                # Composite indexes for fast time-range queries on large tables (H11)
+                cursor.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_trades_symbol_entry '
+                    'ON trades (symbol, entry_time)'
+                )
+                cursor.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_order_audit_symbol_ts '
+                    'ON order_audit (symbol, timestamp)'
+                )
+                cursor.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_system_logs_ts '
+                    'ON system_logs (timestamp)'
+                )
                 conn.commit()
         except Exception as e:
             log_db_error(self.logger, "Error initializing database", e)

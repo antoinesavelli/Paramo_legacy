@@ -65,6 +65,22 @@ class LiveScreener:
 
         self.logger.info("Candidates meeting gap criteria: %d", len(candidates))
 
+        # Filter out symbols with a split effective today (H6: corporate actions)
+        if self.config.screening.FILTER_SPLIT_DAYS:
+            split_symbols = self.data_handler.get_split_symbols(datetime.now())
+            if split_symbols:
+                before = len(candidates)
+                candidates = candidates[~candidates["symbol"].isin(split_symbols)]
+                removed = before - len(candidates)
+                if removed:
+                    self.logger.info(
+                        "Filtered %d split-day symbol(s) from candidates: %s",
+                        removed, sorted(split_symbols),
+                    )
+            if candidates.empty:
+                self.logger.info("All candidates filtered by split-day check")
+                return []
+
         # Use unified screener logic
         result = self.core_screener.screen_symbols(
             candidates_df=candidates,

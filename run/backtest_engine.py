@@ -120,9 +120,10 @@ def _calculate_gate_impact_matrix(diag_df: pd.DataFrame) -> pd.DataFrame:
     if diag_df.empty or 'reason' not in diag_df.columns:
         return pd.DataFrame()
     
-    # Identify winners and losers
-    winners = diag_df[(diag_df['phase'] == 'exited') & (diag_df.get('pnl', 0) > 0)]
-    losers = diag_df[(diag_df['phase'] == 'exited') & (diag_df.get('pnl', 0) <= 0)]
+    # Identify winners and losers — use column guard for safety (L1)
+    pnl_col = diag_df['pnl'] if 'pnl' in diag_df.columns else pd.Series(0, index=diag_df.index)
+    winners = diag_df[(diag_df['phase'] == 'exited') & (pnl_col > 0)]
+    losers = diag_df[(diag_df['phase'] == 'exited') & (pnl_col <= 0)]
     # NOTE: FIX: Use .copy() to avoid SettingWithCopyWarning
     rejected = diag_df[diag_df['phase'] == 'reject'].copy()
     

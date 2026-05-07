@@ -27,8 +27,9 @@ import logging
 from pathlib import Path
 from collections import OrderedDict
 from utils.helpers import validate_ohlcv
+from utils.logging import get_logger
 
-logger = logging.getLogger("data_handler.local")
+logger = get_logger(__name__)
 
 
 class LocalDataHandler:
@@ -247,7 +248,7 @@ class LocalDataHandler:
             return df
             
         except Exception as e:
-            logger.error(f"Error loading day data for {date_str}: {e}")
+            logger.error("Error loading day data for %s", date_str, exc_info=True)
             self._missing_days_cache.add(date_str)
             return pd.DataFrame()
     
@@ -260,7 +261,7 @@ class LocalDataHandler:
             else:
                 return pd.read_parquet(filepath)
         except Exception as e:
-            logger.error(f"Error reading {filepath}: {e}")
+            logger.error("Error reading %s", filepath, exc_info=True)
             return pd.DataFrame()
     
     @staticmethod

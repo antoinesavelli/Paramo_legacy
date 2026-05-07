@@ -4,7 +4,7 @@
 
 from datetime import datetime
 import pandas as pd
-from typing import Dict
+from typing import Dict, Optional
 import os
 import numpy as np
 from utils.logging import get_logger
@@ -21,7 +21,7 @@ class BacktestMarketContext:
     key signals used by live MarketContext to gate trading days.
     """
 
-    def __init__(self, config, dirpath: str | None = None):
+    def __init__(self, config, dirpath: Optional[str] = None):
         self.config = config
         self.dirpath = dirpath or self.config.market_context.CSV_DIR
         self.logger = get_logger(__name__, component="market_context_bt")

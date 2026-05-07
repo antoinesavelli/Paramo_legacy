@@ -191,6 +191,15 @@ class APIDataHandler:
         except Exception as e:
             return log_and_return(self.logger, f"Error getting market status: {e}", {'is_open': False})
 
+    def get_split_symbols(self, date: datetime) -> set:
+        """
+        Return symbols with a stock split (forward or reverse) effective on *date*.
+        Delegates to utils.helpers.fetch_split_symbols; always returns a set.
+        An empty set is returned on any API error so the screener never hard-fails.
+        """
+        from utils.helpers import fetch_split_symbols
+        return fetch_split_symbols(self.api, date)
+
     def calculate_gaps(self, symbols: List[str]) -> pd.DataFrame:
         """
         Calculate gap percentages for screening (live mode).

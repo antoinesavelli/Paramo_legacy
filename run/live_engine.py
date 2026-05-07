@@ -7,8 +7,8 @@ from data_handler.api import APIDataHandler
 from screener.live import LiveScreener
 from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from strategy.risk_manager import RiskManager
-from core.trade_executor import TradeExecutor
-from core.monitor import Monitor
+from execution.trade_executor import TradeExecutor
+from monitoring.monitor import Monitor
 from market_context.live import MarketContext
 from monitoring.reporting import compute_statistics, generate_text_report
 import alpaca_trade_api as tradeapi
@@ -20,7 +20,7 @@ import sys
 import schedule
 import time
 import os
-from utils.logging import setup_logging
+from utils.logging import setup_logging, get_logger
 from news.live import NewsIntegrationLive
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
@@ -32,7 +32,7 @@ def _ensure_dir(path: str):
 
 
 def ensure_storage_layout(market_root: str = None, news_root: str = None, logger: logging.Logger = None):
-    logger = logger or logging.getLogger(__name__)
+    logger = logger or get_logger(__name__)
     if market_root:
         _ensure_dir(market_root)
         logger.info(f"Storage ready for market data at: {market_root}")
@@ -47,7 +47,7 @@ class TradingSystem:
     def __init__(self, config: TradingConfig | None = None):
         self.config = config or TradingConfig()
         setup_logging(level=logging.INFO, log_file="run.log")
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
         self.api = tradeapi.REST(
             self.config.api.ALPACA_API_KEY,
@@ -86,7 +86,7 @@ class TradingSystem:
             with open(self.heartbeat_path, "w", encoding="utf-8") as f:
                 f.write(self.last_heartbeat.isoformat())
         except Exception:
-            pass
+            self.logger.debug("Heartbeat write failed", exc_info=True)
 
     def _watchdog_loop(self):
         while True:

@@ -8,14 +8,15 @@ Provides optimized methods to fetch current prices from intraday data files
 with batching and caching for performance.
 """
 
+import logging
+from utils.logging import get_logger
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Dict, Optional, Set, Callable
 from datetime import datetime
-import logging
 
-logger = logging.getLogger("data_handler.price_fetcher")
+logger = get_logger(__name__)
 
 
 class IntradayPriceFetcher:

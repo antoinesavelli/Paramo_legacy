@@ -25,10 +25,13 @@ from collections import defaultdict
 import logging
 import gc
 
+import logging
+from utils.logging import get_logger
+
 from data_handler.aggregates.aggregate_prefilter import AggregatePreFilter
 from data_handler.gap.gap_monitor import AdaptiveGapMonitor
 
-logger = logging.getLogger("data_handler.gap_calculator")
+logger = get_logger(__name__)
 
 
 class GapCalculator:

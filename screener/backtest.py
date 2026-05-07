@@ -10,6 +10,7 @@ import numpy as np
 from pathlib import Path
 
 from utils.logging import get_logger
+from utils.helpers import calc_gap_percent
 from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from news.backtest import NewsIntegrationBacktest
 from screener.core import UnifiedScreener, CandidateSignal
@@ -80,12 +81,28 @@ class BacktestScreener:
             return {"signals": [], "diagnostics": [], "stats": {}}
         
         # Calculate gaps with validation
-        common_symbols = set(day_agg['symbol']) & set(prev_agg['symbol'])
-        
+        # Pre-index by symbol for O(1) lookup (M4: avoids O(n²) filter-in-loop)
+        day_idx = day_agg.set_index('symbol')
+        prev_idx = prev_agg.set_index('symbol')
+        common_symbols = set(day_idx.index) & set(prev_idx.index)
+
+        # Filter out symbols with a split effective on this day (H6: corporate actions)
+        if self.config.screening.FILTER_SPLIT_DAYS:
+            split_symbols = self._get_split_symbols_for_day(day)
+            if split_symbols:
+                filtered = common_symbols - split_symbols
+                self.logger.info(
+                    "Filtered %d split-day symbol(s) from %d candidates: %s",
+                    len(split_symbols & common_symbols),
+                    len(common_symbols),
+                    sorted(split_symbols & common_symbols),
+                )
+                common_symbols = filtered
+
         gaps_list = []
         for symbol in common_symbols:
-            day_row = day_agg[day_agg['symbol'] == symbol].iloc[0]
-            prev_row = prev_agg[prev_agg['symbol'] == symbol].iloc[0]
+            day_row = day_idx.loc[symbol]
+            prev_row = prev_idx.loc[symbol]
             
             # NOTE: FIX: Validate prev_close before division
             prev_close = prev_row['close']
@@ -99,7 +116,7 @@ class BacktestScreener:
                 self.logger.debug(f"Skipping {symbol}: invalid open={day_open}")
                 continue
             
-            gap_pct = ((day_open - prev_close) / prev_close) * 100.0
+            gap_pct = calc_gap_percent(day_open, prev_close)
             
             # NOTE: FIX: Skip if gap calculation resulted in invalid value
             if not np.isfinite(gap_pct):
@@ -148,3 +165,26 @@ class BacktestScreener:
         self.logger.info("=" * 80)
         
         return result
+
+    def _get_split_symbols_for_day(self, day: datetime) -> set:
+        """
+        Return symbols with a split effective on *day* by querying Alpaca's
+        corporate actions endpoint.
+
+        Requires valid ALPACA_API_KEY / ALPACA_SECRET_KEY in config.api.
+        Returns an empty set silently if keys are absent or on any error —
+        the screener continues unaffected.
+        """
+        api_key = self.config.api.ALPACA_API_KEY
+        secret_key = self.config.api.ALPACA_SECRET_KEY
+        base_url = self.config.api.ALPACA_BASE_URL
+        if not api_key or not secret_key:
+            return set()
+        try:
+            import alpaca_trade_api as tradeapi
+            from utils.helpers import fetch_split_symbols
+            api = tradeapi.REST(api_key, secret_key, base_url, api_version='v2')
+            return fetch_split_symbols(api, day)
+        except Exception as exc:
+            self.logger.debug("Could not fetch split data for %s: %s", day.date(), exc)
+            return set()

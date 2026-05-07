@@ -214,10 +214,8 @@ class TradeSimulator:
             )
             entry_price = entry_price * (1 + slip_pct)
 
-        # Get detailed pattern metrics
-        bars = self.data_handler.get_intraday_bars(
-            symbol, start=session_start_utc, end=session_end_utc
-        )
+        # Get detailed pattern metrics — reuse all_bars fetched above (H4: no second API call)
+        bars = all_bars
         pattern_metrics = self.metrics.extract_pattern_metrics(
             symbol, bars, warmup, premarket_enabled
         )
@@ -463,8 +461,8 @@ class TradeSimulator:
             "gap_percent": gap_pct,
             "phase": "entered", 
             "reason": "signal_valid",
-            "entry": entry_price, 
-            "stop": stop_price, 
+            "entry_price": entry_price, 
+            "stop_price": stop_price, 
             "size": size,
             "is_premarket": is_premarket,
             "risk_per_share": risk_ps,
@@ -590,20 +588,20 @@ class TradeSimulator:
         )
         
         pos = self.positions[symbol]
-        entry = pos['entry_price']
+        entry_price = pos['entry_price']
         size = pos['size']
         gap_pct = pos.get('gap_percent', 0.0)
         pattern_metrics = pos.get('pattern_metrics', {})
         
         if bars is None or bars.empty:
-            exit_price = entry
+            exit_price = entry_price
             exit_time = session_end_utc
         else:
             last = bars.iloc[-1]
             exit_price = float(last['close'])
             exit_time = pd.Timestamp(last['timestamp'])
         
-        pnl = (exit_price - entry) * size
+        pnl = (exit_price - entry_price) * size
         results['capital'] += exit_price * size
         
         # Convert timestamps to EST
@@ -619,12 +617,12 @@ class TradeSimulator:
             'entry_time': TradeMetrics.format_time_for_csv(entry_est),
             'exit_date_str': TradeMetrics.format_date_for_csv(exit_est),
             'exit_time': TradeMetrics.format_time_for_csv(exit_est),
-            'entry_price': entry,
+            'entry_price': entry_price,
             'exit_price': exit_price,
             'size': size,
             'pnl': pnl,
             'exit_reason': reason,
-            'return_pct': ((exit_price - entry) / entry) * 100 if entry else 0,
+            'return_pct': ((exit_price - entry_price) / entry_price) * 100 if entry_price else 0,
             'days_held': 0,
             'is_premarket_entry': pos.get('is_premarket', False),
             'gap_percent': gap_pct,

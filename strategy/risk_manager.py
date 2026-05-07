@@ -8,11 +8,10 @@ from datetime import datetime
 from typing import Dict, Optional
 from config.config import TradingConfig
 from utils.logging import get_logger
+from utils.helpers import log_api_error
 
 _logger = get_logger(__name__)
 
-def log_api_error(logger, msg, exc):
-    logger.error("%s: %s", msg, exc)
 
 def get_account_info(api, logger):
     """Helper to get account info safely."""

@@ -9,8 +9,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
+from utils.logging import get_logger
 
-logger = logging.getLogger("run_backtest")
+logger = get_logger(__name__)
 
 
 def main():

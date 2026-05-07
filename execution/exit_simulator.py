@@ -38,7 +38,7 @@ class ExitSimulator:
         Returns:
             Trade dictionary or None
         """
-        entry = pos['entry_price']
+        entry_price = pos['entry_price']
         entry_time = pos['entry_time']
         size = pos['size']
         gap_pct = pos.get('gap_percent', 0.0)
@@ -52,9 +52,9 @@ class ExitSimulator:
 
         # Calculate initial stop
         if self.config.backtest.SIMPLE_STOPS:
-            stop = entry * 0.95  # 5% stop loss
+            stop_price = entry_price * 0.95  # 5% stop loss
         else:
-            stop = pos['stop_price']
+            stop_price = pos['stop_price']
 
         # Determine absolute deadline
         if trading_window_end_utc is not None:
@@ -79,11 +79,11 @@ class ExitSimulator:
         exit_reason = None
         exit_price = None
         exit_time = None
-        highest_price = entry
-        trailing_stop = stop
+        highest_price = entry_price
+        trailing_stop = stop_price
         
         # Track max profit price and time
-        max_profit_price = entry
+        max_profit_price = entry_price
         max_profit_time = entry_time
 
         # Check each bar for exit conditions
@@ -105,7 +105,7 @@ class ExitSimulator:
                 exit_price = close
                 exit_time = ts
                 
-                current_pnl_pct = (close - entry) / entry
+                current_pnl_pct = (close - entry_price) / entry_price
                 self.logger.info(
                     f"{symbol} TRADING WINDOW CLOSED: "
                     f"entry={TradeMetrics.to_est(entry_time).strftime('%H:%M:%S')}, "
@@ -116,15 +116,15 @@ class ExitSimulator:
                 break
             
             # PRIORITY 2: Fixed stop loss
-            if low <= stop:
+            if low <= stop_price:
                 exit_reason = 'stop_loss'
-                exit_price = stop
+                exit_price = stop_price
                 exit_time = ts
                 break
             
             # PRIORITY 3: ATR trailing stop
             if atr_enabled:
-                profit_pct = (highest_price - entry) / entry
+                profit_pct = (highest_price - entry_price) / entry_price
                 
                 if profit_pct >= min_profit_pct:
                     bars_for_atr = bars_fwd.loc[:idx].tail(atr_period + 5)
@@ -139,7 +139,7 @@ class ExitSimulator:
                         )
                         
                         if new_trailing_stop > trailing_stop:
-                            trailing_stop = max(new_trailing_stop, entry + 0.01)
+                            trailing_stop = max(new_trailing_stop, entry_price + 0.01)
                             
                             self.logger.debug(
                                 f"{symbol} ATR trailing stop updated: "
@@ -148,7 +148,7 @@ class ExitSimulator:
                             )
         
             # Check if trailing stop was hit
-            if exit_reason is None and low <= trailing_stop and trailing_stop > stop:
+            if exit_reason is None and low <= trailing_stop and trailing_stop > stop_price:
                 exit_reason = 'trailing_stop'
                 exit_price = trailing_stop
                 exit_time = ts
@@ -156,7 +156,7 @@ class ExitSimulator:
         # Handle case where loop ended without exit
         if exit_reason is None:
             exit_price, exit_time, exit_reason = self._handle_no_exit(
-                symbol, bars_fwd, entry, entry_time, absolute_deadline
+                symbol, bars_fwd, entry_price, entry_time, absolute_deadline
             )
 
         # Final sanity check
@@ -168,25 +168,25 @@ class ExitSimulator:
                 f"Bars={len(bars_fwd)}"
             )
             exit_reason = 'trading_window_close'
-            exit_price = entry
+            exit_price = entry_price
             exit_time = absolute_deadline
 
         # Apply slippage adjustments
         original_exit_price = exit_price
-        raw_pnl = (exit_price - entry) * size
+        raw_pnl = (exit_price - entry_price) * size
         exit_price = self._apply_slippage(
-            symbol, exit_price, raw_pnl, size, entry, exit_reason, gap_pct, slippage_config
+            symbol, exit_price, raw_pnl, size, entry_price, exit_reason, gap_pct, slippage_config
         )
     
         # Final P&L calculation with slippage
-        pnl = (exit_price - entry) * size
+        pnl = (exit_price - entry_price) * size
         results['capital'] += exit_price * size
 
         # Calculate hold time
         hold_time_minutes = (exit_time - entry_time).total_seconds() / 60.0 if exit_time and entry_time else 0
 
         # Calculate profit erosion
-        profit_erosion_pct = TradeMetrics.calculate_profit_erosion_pct(entry, max_profit_price, exit_price)
+        profit_erosion_pct = TradeMetrics.calculate_profit_erosion_pct(entry_price, max_profit_price, exit_price)
         
         # Calculate pattern strength evolution
         pattern_strength_5min, pattern_strength_at_exit = self._calculate_pattern_evolution(
@@ -207,19 +207,19 @@ class ExitSimulator:
             'entry_time': TradeMetrics.format_time_for_csv(entry_est),
             'exit_date_str': TradeMetrics.format_date_for_csv(exit_est),
             'exit_time': TradeMetrics.format_time_for_csv(exit_est),
-            'entry_price': entry,
+            'entry_price': entry_price,
             'exit_price': exit_price,
             'exit_price_before_slippage': original_exit_price,
             'size': size,
             'pnl': pnl,
             'pnl_before_slippage': raw_pnl,
             'exit_reason': exit_reason,
-            'return_pct': ((exit_price - entry) / entry) * 100 if entry else 0,
+            'return_pct': ((exit_price - entry_price) / entry_price) * 100 if entry_price else 0,
             'days_held': 0,
             'hold_time_minutes': hold_time_minutes,
             'highest_price': highest_price,
-            'mae': min(0, ((min(bars_fwd['low']) - entry) / entry * 100)) if not bars_fwd.empty else 0,
-            'mfe': max(0, ((max(bars_fwd['high']) - entry) / entry * 100)) if not bars_fwd.empty else 0,
+            'mae': min(0, ((min(bars_fwd['low']) - entry_price) / entry_price * 100)) if not bars_fwd.empty else 0,
+            'mfe': max(0, ((max(bars_fwd['high']) - entry_price) / entry_price * 100)) if not bars_fwd.empty else 0,
             # NEW: Additional columns for trades.csv
             'max_profit_price': max_profit_price,
             'max_profit_time': TradeMetrics.format_timestamp_for_csv(max_profit_time_est),
@@ -291,7 +291,7 @@ class ExitSimulator:
         exit_price: float,
         raw_pnl: float,
         size: int,
-        entry: float,
+        entry_price: float,
         exit_reason: str,
         gap_pct: float,
         slippage_config: Dict
@@ -302,7 +302,7 @@ class ExitSimulator:
         if raw_pnl > 0:
             # Winner - reduce profit
             adjusted_pnl = raw_pnl * slippage_config['winner_multiplier']
-            exit_price = entry + (adjusted_pnl / size)
+            exit_price = entry_price + (adjusted_pnl / size)
         
             self.logger.debug(
                 f"{symbol} WINNER slippage applied: "
@@ -323,7 +323,7 @@ class ExitSimulator:
                 )
             
                 exit_price = original_exit_price * (1 - stop_slippage_pct)
-                adjusted_pnl = (exit_price - entry) * size
+                adjusted_pnl = (exit_price - entry_price) * size
             
                 self.logger.debug(
                     f"{symbol} STOP LOSS slippage applied: "
@@ -337,7 +337,7 @@ class ExitSimulator:
             else:
                 # Time exit or other - modest slippage multiplier
                 adjusted_pnl = raw_pnl * slippage_config['loser_multiplier']
-                exit_price = entry + (adjusted_pnl / size)
+                exit_price = entry_price + (adjusted_pnl / size)
             
                 self.logger.debug(
                     f"{symbol} LOSER slippage applied (reason={exit_reason}): "
