@@ -67,7 +67,7 @@ class FileIndexCache:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.debug(f"FileIndexCache initialized: {self._cache_dir}")
+        logger.debug("FileIndexCache initialized: %s", self._cache_dir)
     
     def get_or_build_index(self, 
                           data_dir: str,
@@ -104,14 +104,14 @@ class FileIndexCache:
             cached_data = self._load_cache(cache_file)
             
             if cached_data and self._validate_cache(cached_data, start_date, end_date):
-                logger.info(f"✓ Loaded file index from cache: {cache_file.name}")
+                logger.info("✓ Loaded file index from cache: %s", cache_file.name)
                 cached_data['cached'] = True
                 return cached_data
             else:
-                logger.warning(f"Cache invalid - rebuilding")
+                logger.warning("Cache invalid - rebuilding")
         
         # Build new index
-        logger.info(f"Building file index for {start_date} to {end_date}...")
+        logger.info("Building file index for %s to %s...", start_date, end_date)
         
         index_data = self._build_index(
             data_dir=data_dir,
@@ -123,7 +123,7 @@ class FileIndexCache:
         # Save to cache
         self._save_cache(cache_file, index_data)
         
-        logger.info(f"✓ File index built and cached: {cache_file.name}")
+        logger.info("✓ File index built and cached: %s", cache_file.name)
         index_data['cached'] = False
         
         return index_data
@@ -146,7 +146,7 @@ class FileIndexCache:
         file_index = {}
         current_date = start_dt
         
-        logger.info(f"Scanning intraday files from {start_date} to {end_date}...")
+        logger.info("Scanning intraday files from %s to %s...", start_date, end_date)
         
         total_files = (end_dt - start_dt).days + 1
         scanned = 0
@@ -171,10 +171,10 @@ class FileIndexCache:
                     scanned += 1
                     
                     if scanned % 10 == 0:
-                        logger.info(f"  Progress: {scanned}/{total_files} files scanned")
+                        logger.info("  Progress: %d/%d files scanned", scanned, total_files)
                     
                 except Exception as e:
-                    logger.error(f"Error scanning {file_path}: {e}")
+                    logger.error("Error scanning %s: %s", file_path, e, exc_info=True)
                     file_index[date_str] = set()
             else:
                 # Don't add empty sets for missing files
@@ -182,13 +182,13 @@ class FileIndexCache:
             
             current_date += pd.Timedelta(days=1)
         
-        logger.info(f"✓ Scanned {scanned} intraday files")
+        logger.info("✓ Scanned %d intraday files", scanned)
         
         # Build aggregate file index
         aggregate_index = {}
         months_needed = self._get_months_in_range(start_dt, end_dt)
         
-        logger.info(f"Scanning aggregate files for {len(months_needed)} months...")
+        logger.info("Scanning aggregate files for %d months...", len(months_needed))
         
         for year_month in months_needed:
             year = year_month[:4]
@@ -196,9 +196,9 @@ class FileIndexCache:
             aggregate_index[year_month] = month_file.exists()
             
             status = "✓" if month_file.exists() else "✗"
-            logger.debug(f"  {year_month}: {status}")
+            logger.debug("  %s: %s", year_month, status)
         
-        logger.info(f"✓ Scanned {len(months_needed)} aggregate files")
+        logger.info("✓ Scanned %d aggregate files", len(months_needed))
         
         # Calculate statistics
         days_with_data = len([d for d in file_index.values() if d])
@@ -252,7 +252,7 @@ class FileIndexCache:
                 data = pickle.load(f)
             return data
         except Exception as e:
-            logger.error(f"Error loading cache {cache_file}: {e}")
+            logger.error("Error loading cache %s: %s", cache_file, e, exc_info=True)
             return None
     
     def _save_cache(self, cache_file: Path, data: Dict):
@@ -260,9 +260,9 @@ class FileIndexCache:
         try:
             with open(cache_file, 'wb') as f:
                 pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-            logger.debug(f"Saved cache: {cache_file}")
+            logger.debug("Saved cache: %s", cache_file)
         except Exception as e:
-            logger.error(f"Error saving cache {cache_file}: {e}")
+            logger.error("Error saving cache %s: %s", cache_file, e, exc_info=True)
 
 
 def create_index_for_backtest(config) -> Dict:

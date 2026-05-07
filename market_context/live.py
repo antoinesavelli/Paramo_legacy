@@ -46,32 +46,17 @@ class MarketContext:
             return self.market_indicators
 
     def _analyze_spy_trend(self) -> Dict:
-        """Analyze SPY trend and momentum"""
-        try:
-            bars = self.api.get_bars(self.config.market_context.SPY_SYMBOL, '1Day', limit=max(20, self.config.market_context.SMA_SLOW)).df
-            if bars.empty:
-                return {'trend': 'unknown', 'strength': 0}
-            bars['sma_fast'] = bars['close'].rolling(self.config.market_context.SMA_FAST).mean()
-            bars['sma_slow'] = bars['close'].rolling(self.config.market_context.SMA_SLOW).mean()
-            current_price = float(bars['close'].iloc[-1])
-            sma_f = float(bars['sma_fast'].iloc[-1])
-            sma_s = float(bars['sma_slow'].iloc[-1])
-            if current_price > sma_f > sma_s:
-                trend, strength = 'bullish', min(100.0, ((current_price / sma_s - 1.0) * 100.0) * 10.0)
-            elif current_price < sma_f < sma_s:
-                trend, strength = 'bearish', min(100.0, ((1.0 - current_price / sma_s) * 100.0) * 10.0)
-            else:
-                trend, strength = 'neutral', 50.0
-            momentum = float((bars['close'].iloc[-1] / bars['close'].iloc[-self.config.market_context.SMA_FAST] - 1) * 100.0) if len(bars) >= self.config.market_context.SMA_FAST + 1 else 0.0
-            return {'trend': trend, 'strength': strength, 'momentum': momentum, 'price': current_price, 'sma_5': sma_f, 'sma_20': sma_s}
-        except Exception as e:
-            self.logger.error(f"Error analyzing SPY trend: {e}")
-            return {'trend': 'unknown', 'strength': 0}
+        """Analyze SPY trend and momentum."""
+        return self._analyze_index_trend(self.config.market_context.SPY_SYMBOL, "SPY")
 
     def _analyze_rut_trend(self) -> Dict:
-        """Analyze RUT trend and momentum (use a live symbol like 'IWM' if your data source doesn't support 'RUT')."""
+        """Analyze RUT/IWM trend and momentum."""
+        return self._analyze_index_trend(self.config.market_context.RUT_SYMBOL, "RUT")
+
+    def _analyze_index_trend(self, symbol: str, label: str) -> Dict:
+        """Analyze trend and momentum for any index symbol."""
         try:
-            bars = self.api.get_bars(self.config.market_context.RUT_SYMBOL, '1Day', limit=max(20, self.config.market_context.SMA_SLOW)).df
+            bars = self.api.get_bars(symbol, '1Day', limit=max(20, self.config.market_context.SMA_SLOW)).df
             if bars.empty:
                 return {'trend': 'unknown', 'strength': 0}
             bars['sma_fast'] = bars['close'].rolling(self.config.market_context.SMA_FAST).mean()
@@ -88,7 +73,7 @@ class MarketContext:
             momentum = float((bars['close'].iloc[-1] / bars['close'].iloc[-self.config.market_context.SMA_FAST] - 1) * 100.0) if len(bars) >= self.config.market_context.SMA_FAST + 1 else 0.0
             return {'trend': trend, 'strength': strength, 'momentum': momentum, 'price': current_price, 'sma_5': sma_f, 'sma_20': sma_s}
         except Exception as e:
-            self.logger.error(f"Error analyzing RUT trend: {e}")
+            self.logger.error("Error analyzing %s trend: %s", label, e)
             return {'trend': 'unknown', 'strength': 0}
 
     def _get_vix_level(self) -> Dict:
@@ -111,7 +96,7 @@ class MarketContext:
                 classification = 'extreme'
             return {'level': vix_level, 'classification': classification}
         except Exception as e:
-            self.logger.error(f"Error getting VIX level: {e}")
+            self.logger.error("Error getting VIX level: %s", e, exc_info=True)
             return {'level': 20.0, 'classification': 'normal'}
 
     def _calculate_market_breadth(self) -> Dict:
@@ -137,7 +122,7 @@ class MarketContext:
                 'breadth': 'positive' if ratio > 0.6 else 'negative' if ratio < 0.4 else 'neutral'
             }
         except Exception as e:
-            self.logger.error(f"Error calculating market breadth: {e}")
+            self.logger.error("Error calculating market breadth: %s", e, exc_info=True)
             return {'advances': 0, 'declines': 0, 'ratio': 0.5, 'breadth': 'neutral'}
 
     def _analyze_sector_rotation(self) -> Dict:
@@ -159,7 +144,7 @@ class MarketContext:
             sorted_sectors = sorted(sector_performance.items(), key=lambda x: x[1], reverse=True)
             return {'leading': sorted_sectors[:2], 'lagging': sorted_sectors[-2:], 'all_sectors': sector_performance}
         except Exception as e:
-            self.logger.error(f"Error analyzing sector rotation: {e}")
+            self.logger.error("Error analyzing sector rotation: %s", e, exc_info=True)
             return {'leading': [], 'lagging': [], 'all_sectors': {}}
 
     def _analyze_volume_profile(self) -> Dict:
@@ -174,7 +159,7 @@ class MarketContext:
             profile = 'high' if rv > 1.5 else 'low' if rv < 0.7 else 'normal'
             return {'profile': profile, 'relative_volume': rv, 'current': current_volume, 'average': avg_volume}
         except Exception as e:
-            self.logger.error(f"Error analyzing volume profile: {e}")
+            self.logger.error("Error analyzing volume profile: %s", e, exc_info=True)
             return {'profile': 'normal', 'relative_volume': 1.0}
 
     def _calculate_market_score(self, context: Dict) -> float:

@@ -9,14 +9,14 @@ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional
 import pandas as pd
 
 from strategy.patterns.pattern_analyzer import PatternAnalyzer
-from strategy.patterns.claude_pattern_analyzer import ClaudePatternAnalyzer, ClaudeAnalyzerError
+from strategy.patterns.ai_pattern_analyzer import AIPatternAnalyzer, AIAnalyzerError
 from utils.logging import get_logger
 
 if TYPE_CHECKING:
     from strategy.patterns.analyzer_protocol import PatternAnalyzerProtocol
 
-_VALID_MODES = {"hard_coded_only", "claude_only", "both"}
-_VALID_CONSENSUS = {"and", "or", "primary_hard_coded", "primary_claude"}
+_VALID_MODES = {"hard_coded_only", "ai_only", "both"}
+_VALID_CONSENSUS = {"and", "or", "primary_hard_coded", "primary_ai"}
 
 
 class _AnalysisArgs(NamedTuple):
@@ -40,24 +40,24 @@ class DualPatternAnalyzer:
     def __init__(
         self,
         hard_coded: PatternAnalyzer,
-        claude: ClaudePatternAnalyzer,
+        ai: AIPatternAnalyzer,
         config,
         is_backtest: bool = False,
     ):
         self._hard_coded = hard_coded
-        self._claude = claude
-        self._cfg = config.claude_analyzer
+        self._ai = ai
+        self._cfg = config.ai_analyzer
         self.is_backtest = is_backtest
         self.logger = get_logger(__name__, component="dual_analyzer")
 
         if self._cfg.MODE not in _VALID_MODES:
             raise ValueError(
-                f"ClaudeAnalyzerConfig.MODE must be one of {_VALID_MODES}, "
+                f"AIAnalyzerConfig.MODE must be one of {_VALID_MODES}, "
                 f"got '{self._cfg.MODE}'"
             )
         if self._cfg.CONSENSUS not in _VALID_CONSENSUS:
             raise ValueError(
-                f"ClaudeAnalyzerConfig.CONSENSUS must be one of {_VALID_CONSENSUS}, "
+                f"AIAnalyzerConfig.CONSENSUS must be one of {_VALID_CONSENSUS}, "
                 f"got '{self._cfg.CONSENSUS}'"
             )
 
@@ -79,102 +79,102 @@ class DualPatternAnalyzer:
         if mode == "hard_coded_only":
             return self._hard_coded.analyze_pattern(*req)
 
-        claude_allowed = self._claude_permitted()
+        ai_allowed = self._ai_permitted()
 
-        if mode == "claude_only":
-            if not claude_allowed:
+        if mode == "ai_only":
+            if not ai_allowed:
                 self.logger.info(
-                    "%s: Claude skipped (backtest guard). Falling back to hard-coded.",
+                    "%s: AI skipped (backtest guard). Falling back to hard-coded.",
                     symbol
                 )
                 return self._hard_coded.analyze_pattern(*req)
-            return self._run_claude_with_fallback(req, fallback_on_error=True)
+            return self._run_ai_with_fallback(req, fallback_on_error=True)
 
         # mode == "both"
         hc_result = self._hard_coded.analyze_pattern(*req)
 
-        if not claude_allowed:
+        if not ai_allowed:
             self.logger.debug(
-                "%s: Claude skipped (backtest guard). Using hard-coded result.",
+                "%s: AI skipped (backtest guard). Using hard-coded result.",
                 symbol
             )
-            hc_result.setdefault("meta", {})["claude_skipped"] = True
+            hc_result.setdefault("meta", {})["ai_skipped"] = True
             return hc_result
 
-        claude_result = self._run_claude_with_fallback(req, fallback_on_error=False)
+        ai_result = self._run_ai_with_fallback(req, fallback_on_error=False)
 
-        if claude_result is None:
-            hc_result.setdefault("meta", {})["claude_error"] = True
+        if ai_result is None:
+            hc_result.setdefault("meta", {})["ai_error"] = True
             return hc_result
 
-        return self._apply_consensus(hc_result, claude_result, symbol)
+        return self._apply_consensus(hc_result, ai_result, symbol)
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _claude_permitted(self) -> bool:
-        """Return False when Claude must be skipped for this call."""
+    def _ai_permitted(self) -> bool:
+        """Return False when AI must be skipped for this call."""
         return not (self.is_backtest and not self._cfg.ENABLED_IN_BACKTEST)
 
-    def _run_claude_with_fallback(
+    def _run_ai_with_fallback(
         self,
         req: _AnalysisArgs,
         fallback_on_error: bool,
     ) -> Optional[Dict]:
         """
-        Call Claude.  On ClaudeAnalyzerError:
+        Call the AI analyzer.  On AIAnalyzerError:
         - fallback_on_error=True  → run hard-coded and return its result
         - fallback_on_error=False → return None so the caller decides
         """
         try:
-            return self._claude.analyze_pattern(*req)
-        except ClaudeAnalyzerError as exc:
+            return self._ai.analyze_pattern(*req)
+        except AIAnalyzerError as exc:
             if fallback_on_error:
                 self.logger.warning(
-                    "%s: ClaudeAnalyzerError — %s. Falling back to hard-coded result.",
+                    "%s: AIAnalyzerError — %s. Falling back to hard-coded result.",
                     req.symbol, exc
                 )
                 result = self._hard_coded.analyze_pattern(*req)
-                result.setdefault("meta", {})["claude_fallback"] = str(exc)
+                result.setdefault("meta", {})["ai_fallback"] = str(exc)
                 return result
-            self.logger.warning("%s: ClaudeAnalyzerError — %s.", req.symbol, exc)
+            self.logger.warning("%s: AIAnalyzerError — %s.", req.symbol, exc)
             return None
 
-    def _apply_consensus(self, hc: Dict, claude: Dict, symbol: str) -> Dict:
+    def _apply_consensus(self, hc: Dict, ai: Dict, symbol: str) -> Dict:
         """Merge two result dicts according to the configured consensus rule."""
         consensus = self._cfg.CONSENSUS
-        meta = {"hard_coded": hc, "claude": claude, "consensus_mode": consensus}
+        meta = {"hard_coded": hc, "ai": ai, "consensus_mode": consensus}
 
         if consensus == "and":
             winner = dict(hc)
-            winner["valid"] = hc["valid"] and claude["valid"]
+            winner["valid"] = hc["valid"] and ai["valid"]
 
         elif consensus == "or":
             hc_valid = hc["valid"]
-            claude_valid = claude["valid"]
-            if hc_valid and claude_valid:
+            ai_valid = ai["valid"]
+            if hc_valid and ai_valid:
                 # Both valid — prefer higher pattern strength
                 winner = dict(
-                    hc if hc.get("pattern_strength", 0) >= claude.get("pattern_strength", 0)
-                    else claude
+                    hc if hc.get("pattern_strength", 0) >= ai.get("pattern_strength", 0)
+                    else ai
                 )
             elif hc_valid:
                 winner = dict(hc)
-            elif claude_valid:
-                winner = dict(claude)
+            elif ai_valid:
+                winner = dict(ai)
             else:
                 winner = dict(hc)
 
         elif consensus == "primary_hard_coded":
             winner = dict(hc)
 
-        else:  # primary_claude
-            winner = dict(claude)
+        else:  # primary_ai
+            winner = dict(ai)
 
         winner["meta"] = meta
         self.logger.info(
-            "%s: consensus=%s → valid=%s hc_valid=%s claude_valid=%s",
-            symbol, consensus, winner["valid"], hc["valid"], claude["valid"]
+            "%s: consensus=%s → valid=%s hc_valid=%s ai_valid=%s",
+            symbol, consensus, winner["valid"], hc["valid"], ai["valid"]
         )
         return winner

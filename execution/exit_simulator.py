@@ -59,7 +59,7 @@ class ExitSimulator:
         # Determine absolute deadline
         if trading_window_end_utc is not None:
             absolute_deadline = trading_window_end_utc
-            self.logger.debug(
+            self.logger.debug(  # noqa: G004
                 f"{symbol}: Trading window deadline set to "
                 f"{TradeMetrics.to_est(absolute_deadline).strftime('%H:%M:%S')} ET"
             )
@@ -106,7 +106,7 @@ class ExitSimulator:
                 exit_time = ts
                 
                 current_pnl_pct = (close - entry_price) / entry_price
-                self.logger.info(
+                self.logger.info(  # noqa: G004
                     f"{symbol} TRADING WINDOW CLOSED: "
                     f"entry={TradeMetrics.to_est(entry_time).strftime('%H:%M:%S')}, "
                     f"deadline={TradeMetrics.to_est(absolute_deadline).strftime('%H:%M:%S')}, "
@@ -141,7 +141,7 @@ class ExitSimulator:
                         if new_trailing_stop > trailing_stop:
                             trailing_stop = max(new_trailing_stop, entry_price + 0.01)
                             
-                            self.logger.debug(
+                            self.logger.debug(  # noqa: G004
                                 f"{symbol} ATR trailing stop updated: "
                                 f"highest=${highest_price:.2f}, "
                                 f"new_stop=${trailing_stop:.2f}"
@@ -161,7 +161,7 @@ class ExitSimulator:
 
         # Final sanity check
         if exit_price is None or exit_time is None:
-            self.logger.error(
+            self.logger.error(  # noqa: G004
                 f"{symbol}: Failed to determine exit. "
                 f"Entry={TradeMetrics.to_est(entry_time).strftime('%H:%M:%S')}, "
                 f"Deadline={TradeMetrics.to_est(absolute_deadline).strftime('%H:%M:%S')}, "

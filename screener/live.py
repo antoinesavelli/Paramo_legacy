@@ -47,7 +47,7 @@ class LiveScreener:
             return []
         
         symbols = universe["symbol"].tolist()
-        self.logger.info(f"Universe loaded with {len(symbols)} symbols")
+        self.logger.info("Universe loaded with %d symbols", len(symbols))
         
         # Calculate gaps
         gaps_df = self.data_handler.calculate_gaps(symbols)

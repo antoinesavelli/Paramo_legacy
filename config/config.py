@@ -310,23 +310,31 @@ class BacktestConfig:
     ANALYSIS_WINDOW_END_ET: str = "16:00"
 
 @dataclass(frozen=True)
-class _ClaudeBaseConfig:
-    """Shared Claude toggle structure for all Claude-backed components."""
+class _AIBaseConfig:
+    """Shared toggle structure for all AI-backed components."""
     ENABLED: bool = False
-    MODE: str = 'hard_coded_only'
-    CONSENSUS: str = 'and'
+    MODE: str = 'hard_coded_only'   # 'hard_coded_only' | 'ai_only' | 'both'
+    CONSENSUS: str = 'and'          # 'and' | 'or' | 'primary_hard_coded' | 'primary_ai'
     ENABLED_IN_BACKTEST: bool = False
     TIMEOUT_SECONDS: float = 10.0
-    MODEL: str = 'claude-sonnet-4-5'
 
 @dataclass(frozen=True)
-class ClaudeAnalyzerConfig(_ClaudeBaseConfig):
-    """Claude config for OHLCV pattern analysis."""
+class AIAnalyzerConfig(_AIBaseConfig):
+    """Ollama AI config for OHLCV pattern analysis (deepseek-r1:7b or compatible)."""
+    MODEL: str = 'deepseek-r1:7b'
+    OLLAMA_BASE_URL: str = 'http://localhost:11434'
     MAX_BARS_TO_SEND: int = 60
 
+# ---------------------------------------------------------------------------
+# Backward-compat aliases — remove after all references are updated.
+# ---------------------------------------------------------------------------
+_ClaudeBaseConfig = _AIBaseConfig
+ClaudeAnalyzerConfig = AIAnalyzerConfig
+
 @dataclass(frozen=True)
-class ClaudeNewsConfig(_ClaudeBaseConfig):
+class ClaudeNewsConfig(_AIBaseConfig):
     """Claude config for news sentiment scoring."""
+    MODEL: str = 'claude-sonnet-4-5'
     MAX_ARTICLES_TO_SEND: int = 5
     FETCH_ARTICLE_BODY: bool = True
 
@@ -347,7 +355,7 @@ class TradingConfig:
     system: SystemConfig = field(default_factory=SystemConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     market_context: MarketContextConfig = field(default_factory=MarketContextConfig)
-    claude_analyzer: ClaudeAnalyzerConfig = field(default_factory=ClaudeAnalyzerConfig)
+    ai_analyzer: AIAnalyzerConfig = field(default_factory=AIAnalyzerConfig)
     claude_news: ClaudeNewsConfig = field(default_factory=ClaudeNewsConfig)
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ class NewsIntegrationBacktest:
         file_path = self.data_dir / str(year) / f"news_{year}{month:02d}.parquet"
         
         if not file_path.exists():
-            self.logger.debug(f"No news file: {file_path}")
+            self.logger.debug("No news file: %s", file_path)
             return pd.DataFrame()
         
         try:
@@ -58,11 +58,11 @@ class NewsIntegrationBacktest:
             self._current_month_key = month_key
             self._current_month_data = monthly_df
             
-            self.logger.debug(f"Loaded news: {len(monthly_df)} articles for {year}-{month:02d}")
+            self.logger.debug("Loaded news: %d articles for %s", len(monthly_df), f"{year}-{month:02d}")
             return monthly_df
             
         except Exception as e:
-            self.logger.error(f"Error loading {file_path}: {e}")
+            self.logger.error("Error loading %s: %s", file_path, e, exc_info=True)
             return pd.DataFrame()
 
     def check_news_approval(
@@ -111,7 +111,7 @@ class NewsIntegrationBacktest:
         # ── Filter to this symbol ────────────────────────────────────────────
         sym_col = 'ticker' if 'ticker' in monthly_df.columns else 'symbol'
         if sym_col not in monthly_df.columns:
-            self.logger.warning(f"News parquet has no ticker/symbol column — columns: {list(monthly_df.columns)}")
+            self.logger.warning("News parquet has no ticker/symbol column — columns: %s", list(monthly_df.columns))
             return {
                 'approved': False,
                 'reason': 'no_news_data',
@@ -137,7 +137,7 @@ class NewsIntegrationBacktest:
         # Avoids stale prior-day articles satisfying the timing gate.
         date_col = 'date' if 'date' in sym_df.columns else 'published_at'
         if date_col not in sym_df.columns:
-            self.logger.warning(f"News parquet has no date/published_at column for {symbol}")
+            self.logger.warning("News parquet has no date/published_at column for %s", symbol)
             return {
                 'approved': False,
                 'reason': 'no_news_data',

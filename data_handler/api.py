@@ -89,7 +89,7 @@ class APIDataHandler:
                     if 'symbol' in df.columns:
                         df = df[['symbol']].dropna().drop_duplicates().reset_index(drop=True)
                         df['symbol'] = df['symbol'].str.upper()
-                        self.logger.info(f"Loaded universe from {symbols_csv}: {len(df)} symbols")
+                        self.logger.info("Loaded universe from %s: %d symbols", symbols_csv, len(df))
                         
                         # NOTE: After loading universe, initialize gap calculator
                         if self.gap_calculator is None and not df.empty:
@@ -99,15 +99,15 @@ class APIDataHandler:
                                 file_index=None,  # No file index for live
                                 universe_symbols=universe_symbols  # NOTE: Pass universe
                             )
-                            self.logger.info(f"Initialized gap calculator with {len(universe_symbols)} symbols")
+                            self.logger.info("Initialized gap calculator with %d symbols", len(universe_symbols))
                         
                         return df
                 except Exception as e:
-                    self.logger.warning(f"Failed to load {symbols_csv}: {e}")
+                    self.logger.warning("Failed to load %s: %s", symbols_csv, e, exc_info=True)
         
         # No fallback - symbols.csv is required for live trading
         self.logger.error("symbols.csv not found in any expected location. Cannot proceed without universe.")
-        self.logger.error(f"Searched paths: {[str(p) for p in possible_paths]}")
+        self.logger.error("Searched paths: %s", [str(p) for p in possible_paths])
         return pd.DataFrame(columns=['symbol'])
 
     def get_quote_data(self, symbols: List[str]) -> Dict:
@@ -129,15 +129,15 @@ class APIDataHandler:
                             'volume': quote.volume,
                             'timestamp': quote.timestamp
                         }
-                self.logger.debug(f"Fetched quotes batch size={len(batch)} received={len(batch_quotes)}")
+                self.logger.debug("Fetched quotes batch size=%d received=%d", len(batch), len(batch_quotes))
             except ConnectionError as e:
-                self.logger.error(f"Network error getting quotes for batch: {e}")
+                self.logger.error("Network error getting quotes for batch: %s", e)
             except ValueError as e:
-                self.logger.error(f"Invalid quote data for batch: {e}")
+                self.logger.error("Invalid quote data for batch: %s", e)
             except Exception as e:
-                self.logger.error(f"Unexpected error getting quotes for batch: {e}")
+                self.logger.error("Unexpected error getting quotes for batch: %s", e, exc_info=True)
         
-        self.logger.info(f"Quotes fetched for {len(quotes)} symbols (requested={len(symbols)})")
+        self.logger.info("Quotes fetched for %d symbols (requested=%d)", len(quotes), len(symbols))
         return quotes
 
     def _get_daily_stats_from_api(self, symbol: str, day: datetime) -> Optional[Dict]:
@@ -174,7 +174,7 @@ class APIDataHandler:
             }
             
         except Exception as e:
-            self.logger.debug(f"Error getting daily stats for {symbol} on {day.date()}: {e}")
+            self.logger.debug("Error getting daily stats for %s on %s: %s", symbol, day.date(), e)
             return None
 
     def get_market_status(self) -> Dict:
@@ -228,7 +228,7 @@ class APIDataHandler:
         if not gaps_df.empty and symbols:
             gaps_df = gaps_df[gaps_df['symbol'].isin(symbols)]
         
-        self.logger.info(
+        self.logger.info(  # noqa: G004
             f"Gap calculation complete: {len(gaps_df)} symbols "
             f"(requested={len(symbols)})"
         )
@@ -246,11 +246,11 @@ class APIDataHandler:
                 bars['dollar_volume'] = bars['close'] * bars['volume']
                 bars = validate_ohlcv(bars, source=symbol, logger=self.logger)
                 if attempt > 0:
-                    self.logger.info(f"Bars fetched for {symbol} on retry {attempt+1}: {len(bars)} rows")
+                    self.logger.info("Bars fetched for %s on retry %d: %d rows", symbol, attempt+1, len(bars))
                 return bars
-            self.logger.warning(f"Attempt {attempt+1} failed for {symbol}: empty bars")
+            self.logger.warning("Attempt %d failed for %s: empty bars", attempt+1, symbol)
             time.sleep(2)
-        self.logger.error(f"All retries failed. Could not retrieve data for {symbol}.")
+        self.logger.error("All retries failed. Could not retrieve data for %s.", symbol)
         return pd.DataFrame()
 
     def get_float_data(self, symbol: str) -> Optional[Dict]:
@@ -264,14 +264,14 @@ class APIDataHandler:
                     'float': fundamentals.float_shares,
                     'market_cap': fundamentals.market_cap
                 }
-                self.logger.debug(f"Alpaca fundamentals for {symbol} received")
+                self.logger.debug("Alpaca fundamentals for %s received", symbol)
                 return data
         except ConnectionError as e:
-            self.logger.warning(f"Network error getting Alpaca fundamentals for {symbol}: {e}")
+            self.logger.warning("Network error getting Alpaca fundamentals for %s: %s", symbol, e)
         except ValueError as e:
-            self.logger.warning(f"Invalid Alpaca fundamental data for {symbol}: {e}")
+            self.logger.warning("Invalid Alpaca fundamental data for %s: %s", symbol, e)
         except Exception as e:
-            self.logger.debug(f"Alpaca fundamentals unavailable for {symbol}: {e}")
+            self.logger.debug("Alpaca fundamentals unavailable for %s: %s", symbol, e)
         
         # Fallback to yfinance
         try:
@@ -282,14 +282,11 @@ class APIDataHandler:
                 'float': info.get('floatShares'),
                 'market_cap': info.get('marketCap')
             }
-            self.logger.debug(f"yfinance fundamentals for {symbol} received")
+            self.logger.debug("yfinance fundamentals for %s received", symbol)
             return data
-        except ConnectionError as e:
-            self.logger.error(f"Network error getting yfinance fundamentals for {symbol}: {e}")
-        except KeyError as e:
-            self.logger.warning(f"Missing yfinance data for {symbol}: {e}")
+            self.logger.warning("Missing yfinance data for %s: %s", symbol, e)
         except Exception as e:
-            self.logger.error(f"Unexpected error getting yfinance fundamentals for {symbol}: {e}")
+            self.logger.error("Unexpected error getting yfinance fundamentals for %s: %s", symbol, e, exc_info=True)
         
         return None
 

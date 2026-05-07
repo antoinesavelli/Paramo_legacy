@@ -30,29 +30,30 @@ def build_pattern_analyzer(
     ``MODE`` at call-time; the factory only decides whether to construct the
     Claude object at all.
     """
-    cfg = config.claude_analyzer
+    cfg = config.ai_analyzer
     hard_coded = PatternAnalyzer(config, data_handler)
 
     if not (cfg.ENABLED and cfg.MODE != "hard_coded_only"):
         logger.info(
-            f"PatternAnalyzer: using hard-coded only "
-            f"(ENABLED={cfg.ENABLED}, MODE='{cfg.MODE}')"
+            "PatternAnalyzer: using hard-coded only "
+            "(ENABLED=%s, MODE='%s')",
+            cfg.ENABLED, cfg.MODE,
         )
         return hard_coded
 
-    # Only import heavy Claude dependencies when actually needed
-    from strategy.patterns.claude_pattern_analyzer import ClaudePatternAnalyzer
+    # Only import heavy AI dependencies when actually needed
+    from strategy.patterns.ai_pattern_analyzer import AIPatternAnalyzer
     from strategy.patterns.dual_pattern_analyzer import DualPatternAnalyzer
 
     analyzer = DualPatternAnalyzer(
         hard_coded=hard_coded,
-        claude=ClaudePatternAnalyzer(config),
+        ai=AIPatternAnalyzer(config),
         config=config,
         is_backtest=is_backtest,
     )
     logger.info(
-        f"PatternAnalyzer: DualPatternAnalyzer constructed "
-        f"(MODE='{cfg.MODE}', CONSENSUS='{cfg.CONSENSUS}', "
-        f"is_backtest={is_backtest}, ENABLED_IN_BACKTEST={cfg.ENABLED_IN_BACKTEST})"
+        "PatternAnalyzer: DualPatternAnalyzer constructed "
+        "(MODE='%s', CONSENSUS='%s', is_backtest=%s, ENABLED_IN_BACKTEST=%s)",
+        cfg.MODE, cfg.CONSENSUS, is_backtest, cfg.ENABLED_IN_BACKTEST,
     )
     return analyzer

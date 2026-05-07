@@ -77,7 +77,7 @@ class IntradayPriceFetcher:
             return None
             
         except Exception as e:
-            logger.debug(f"Error fetching price for {symbol} at {timestamp}: {e}")
+            logger.debug("Error fetching price for %s at %s: %s", symbol, timestamp, e)
             return None
     
     def get_prices_batch(self, symbols: Set[str], timestamp: pd.Timestamp) -> Dict[str, float]:
@@ -119,7 +119,7 @@ class IntradayPriceFetcher:
                             prices[symbol] = float(symbol_data['close'].iloc[0])
             
         except Exception as e:
-            logger.debug(f"Error in batch price fetch at {timestamp}: {e}")
+            logger.debug("Error in batch price fetch at %s: %s", timestamp, e)
         
         return prices
     
@@ -139,7 +139,7 @@ class IntradayPriceFetcher:
         file_path = self._data_dir / year / f"{day_str}.parquet"
         
         if not file_path.exists():
-            logger.warning(f"Intraday data file not found: {file_path}")
+            logger.warning("Intraday data file not found: %s", file_path)
             return False
         
         try:
@@ -154,11 +154,11 @@ class IntradayPriceFetcher:
             # Add to cache
             self._add_to_cache(day_str, df)
             
-            logger.debug(f"Loaded intraday data: {file_path} ({len(df)} rows)")
+            logger.debug("Loaded intraday data: %s (%d rows)", file_path, len(df))
             return True
             
         except Exception as e:
-            logger.error(f"Error loading intraday data {file_path}: {e}")
+            logger.error("Error loading intraday data %s: %s", file_path, e, exc_info=True)
             return False
     
     def _add_to_cache(self, day_str: str, df: pd.DataFrame):
@@ -171,7 +171,7 @@ class IntradayPriceFetcher:
             oldest = self._cache_order.pop(0)
             if oldest in self._daily_cache:
                 del self._daily_cache[oldest]
-                logger.debug(f"Evicted day data from cache: {oldest}")
+                logger.debug("Evicted day data from cache: %s", oldest)
     
     def clear_cache(self):
         """Clear all cached data."""
@@ -185,4 +185,4 @@ class IntradayPriceFetcher:
             del self._daily_cache[day_str]
             if day_str in self._cache_order:
                 self._cache_order.remove(day_str)
-            logger.debug(f"Removed day {day_str} from cache")
+            logger.debug("Removed day %s from cache", day_str)

@@ -35,10 +35,10 @@ def ensure_storage_layout(market_root: str = None, news_root: str = None, logger
     logger = logger or get_logger(__name__)
     if market_root:
         _ensure_dir(market_root)
-        logger.info(f"Storage ready for market data at: {market_root}")
+        logger.info("Storage ready for market data at: %s", market_root)
     if news_root:
         _ensure_dir(news_root)
-        logger.info(f"Storage ready for news at: {news_root}")
+        logger.info("Storage ready for news at: %s", news_root)
 
 
 class TradingSystem:
@@ -94,7 +94,7 @@ class TradingSystem:
             now = datetime.now(timezone.utc)
             delta = (now - self.last_heartbeat).total_seconds()
             if delta > self.watchdog_interval * 3:
-                self.logger.critical(
+                self.logger.critical(  # noqa: G004
                     f"Watchdog: system stalled (last heartbeat {delta:.0f}s ago). Initiating shutdown."
                 )
                 try:
@@ -118,13 +118,13 @@ class TradingSystem:
     def _verify_api(self):
         try:
             account = self.api.get_account()
-            self.logger.info(f"Connected to Alpaca. Account status: {account.status}")
+            self.logger.info("Connected to Alpaca. Account status: %s", account.status)
             if account.trading_blocked:
                 self.logger.error("Trading is blocked on this account")
                 return False
             return True
         except Exception as e:
-            self.logger.error(f"Failed to connect to Alpaca: {e}")
+            self.logger.error("Failed to connect to Alpaca: %s", e, exc_info=True)
             return False
 
     def _schedule_tasks(self):
@@ -141,19 +141,19 @@ class TradingSystem:
             vix = indicators.get('vix_level', {})
             spy = indicators.get('spy_trend', {})
             rut = indicators.get('rut_trend', {})
-            self.logger.info(
+            self.logger.info(  # noqa: G004
                 f"Market context update complete | Score: {score} | Environment: {env} | "
                 f"VIX: {vix.get('level', 'N/A')} ({vix.get('classification', 'N/A')}) | "
                 f"SPY trend: {spy.get('trend', 'N/A')} | RUT trend: {rut.get('trend', 'N/A')}"
             )
             if not self.market_context.should_trade():
-                self.logger.warning(f"Trading DISABLED for today | Score: {score} | Environment: {env}")
+                self.logger.warning("Trading DISABLED for today | Score: %s | Environment: %s", score, env)
                 self.running = False
                 return
             self.logger.info("Market conditions acceptable - trading ENABLED")
             self.running = True
         except Exception as e:
-            self.logger.error(f"Error in market open tasks: {e}")
+            self.logger.error("Error in market open tasks: %s", e, exc_info=True)
 
     def _market_close_tasks(self):
         self.logger.info("Running market close tasks...")
@@ -161,7 +161,7 @@ class TradingSystem:
             self.trade_executor.close_all_positions()
             self._generate_daily_report()
         except Exception as e:
-            self.logger.error(f"Error in market close tasks: {e}")
+            self.logger.error("Error in market close tasks: %s", e, exc_info=True)
 
     def _main_loop(self):
         self.logger.info("Entering main trading loop...")
@@ -173,7 +173,7 @@ class TradingSystem:
                     self._run_scan_with_timeout()
                 time.sleep(self.config.system.SCAN_INTERVAL_SECONDS)
             except Exception as e:
-                self.logger.error(f"Error in main loop: {e}")
+                self.logger.error("Error in main loop: %s", e, exc_info=True)
                 time.sleep(60)
 
     def _run_scan_with_timeout(self):
@@ -181,9 +181,9 @@ class TradingSystem:
             future = self.executor.submit(self._run_trading_cycle)
             future.result(timeout=self.max_scan_seconds)
         except FuturesTimeout:
-            self.logger.error(f"Trading cycle exceeded {self.max_scan_seconds}s timeout")
+            self.logger.error("Trading cycle exceeded %ds timeout", self.max_scan_seconds)
         except Exception as e:
-            self.logger.error(f"Error in trading cycle: {e}")
+            self.logger.error("Error in trading cycle: %s", e, exc_info=True)
 
     def _run_trading_cycle(self):
         try:
@@ -196,7 +196,7 @@ class TradingSystem:
             self.trade_executor.update_active_positions()
             self.last_scan_time = datetime.now(timezone.utc)
         except Exception as e:
-            self.logger.error(f"Error in trading cycle: {e}")
+            self.logger.error("Error in trading cycle: %s", e, exc_info=True)
 
     def _generate_daily_report(self):
         try:
@@ -211,7 +211,7 @@ class TradingSystem:
             report = generate_text_report(stats, title="DAILY TRADING REPORT")
             self.logger.info("\n" + report)
         except Exception as e:
-            self.logger.error(f"Error generating report: {e}")
+            self.logger.error("Error generating report: %s", e, exc_info=True)
 
     def shutdown(self):
         self.logger.info("Shutting down trading system...")
@@ -220,5 +220,5 @@ class TradingSystem:
             self.trade_executor.close_all_positions()
             self.executor.shutdown(wait=True, cancel_futures=True)
         except Exception as e:
-            self.logger.error(f"Error during shutdown: {e}")
+            self.logger.error("Error during shutdown: %s", e, exc_info=True)
         self.logger.info("Shutdown complete")

@@ -3,7 +3,7 @@
 # =====================================================
 
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple  # Tuple kept for 3.9 compat
 import pandas as pd
 from utils.logging import get_logger
 from strategy.risk_manager import calc_position_size_percentage
@@ -36,7 +36,7 @@ class TradeSimulator:
         session_start_utc: pd.Timestamp,
         session_end_utc: pd.Timestamp,
         premarket_enabled: bool
-    ) -> tuple[int, int]:
+    ) -> Tuple[int, int]:
         """Process candidate signals and simulate trades with market context."""
         
         # Get market context for the day
@@ -54,7 +54,7 @@ class TradeSimulator:
 
         for idx, sig in enumerate(signals[:max_per_day], 1):
             if len(self.positions) >= self.config.risk.MAX_CONCURRENT_POSITIONS:
-                self.logger.info(
+                self.logger.info(  # noqa: G004
                     f"[POSITION LIMIT] Max concurrent positions reached "
                     f"({self.config.risk.MAX_CONCURRENT_POSITIONS})"
                 )
@@ -101,12 +101,12 @@ class TradeSimulator:
                 vix_data = self.market_context.market_indicators.get('vix_level', {})
                 vix_at_entry = vix_data.get('level', None)
                 
-                self.logger.info(
+                self.logger.info(  # noqa: G004
                     f"[MARKET CONTEXT] {day.date()}: env={env}, "
                     f"score={score:.1f}, VIX={vix_at_entry:.1f}, size_adj={market_adjustment:.2f}x"
                 )
             except Exception as e:
-                self.logger.warning(f"Failed to get market context: {e}, using 1.0x")
+                self.logger.warning("Failed to get market context: %s, using 1.0x", e, exc_info=True)
                 market_adjustment = 1.0
                 vix_at_entry = None
         
@@ -127,7 +127,7 @@ class TradeSimulator:
             trading_window_end_utc = trading_window_end_et.tz_convert('UTC')
             
             self.logger.info(
-                f"[TRADING WINDOW] Enabled: All positions will be closed by {window_end_str} ET"
+                "[TRADING WINDOW] Enabled: All positions will be closed by %s ET", window_end_str
             )
             return trading_window_end_utc
         
@@ -161,7 +161,7 @@ class TradeSimulator:
         pattern_strength = sig.pattern_strength
         is_premarket = sig.meta.get('is_premarket', False)
 
-        self.logger.debug(f"[{idx}/{max_per_day}] Processing {symbol}...")
+        self.logger.debug("[%d/%d] Processing %s...", idx, max_per_day, symbol)
 
         risk_ps = entry_price - stop_price
         
@@ -507,7 +507,7 @@ class TradeSimulator:
 
         # Log trade exit
         patterns = pattern_metrics.get('patterns_detected', '')
-        self.logger.info(
+        self.logger.info(  # noqa: G004
             f"[EXIT] {symbol} | "
             f"Price: ${exit_price:.2f} | "
             f"P&L: ${trade['pnl']:+.2f} ({trade['return_pct']:+.2f}%) | "
@@ -670,7 +670,7 @@ class TradeSimulator:
     def close_all_positions(self, end_date: datetime, results: Dict) -> None:
         """Force-close all open positions."""
         for symbol in list(self.positions.keys()):
-            self.logger.info(f"Force closing position: {symbol}")
+            self.logger.info("Force closing position: %s", symbol)
             self.close_position(symbol, end_date, results, reason="backtest_end")
     
     def _position_size(self, entry: float, stop: float, cash: float, market_adjustment: float = 1.0) -> int:

@@ -328,8 +328,8 @@ class Backtester:
         total_start_time = time.time()
         
         self.logger.info("=" * 80)
-        self.logger.info(f"BACKTEST START: {start_date.date()} to {end_date.date()}")
-        self.logger.info(f"Initial Capital: ${initial_capital:,.2f}")
+        self.logger.info("BACKTEST START: %s to %s", start_date.date(), end_date.date())
+        self.logger.info("Initial Capital: $%s", f"{initial_capital:,.2f}")
         self.logger.info("=" * 80)
         
         results = self._init_results(initial_capital)
@@ -350,7 +350,7 @@ class Backtester:
         print()
         print()
         
-        self.logger.info(f"Total calendar days to process: {total_days}")
+        self.logger.info("Total calendar days to process: %d", total_days)
         
         # Process each day with progress tracking
         for day_idx, cur_day in enumerate(all_days, 1):
@@ -360,14 +360,14 @@ class Backtester:
             # Skip weekends
             if cur_day.weekday() >= 5:
                 self.progress.skip_day("Weekend")
-                self.logger.debug(f"[{day_idx}/{total_days}] {cur_day.date()} - SKIP (weekend)")
+                self.logger.debug("[%d/%d] %s - SKIP (weekend)", day_idx, total_days, cur_day.date())
                 continue
             
             # Check if data exists
             day_str = cur_day.strftime('%Y-%m-%d')
             if not self.data_handler.has_data_for_date(day_str):
                 self.progress.skip_day("No data")
-                self.logger.info(f"[{day_idx}/{total_days}] {cur_day.date()} - SKIP (no data)")
+                self.logger.info("[%d/%d] %s - SKIP (no data)", day_idx, total_days, cur_day.date())
                 continue
 
             # Load market sentiment
@@ -376,7 +376,7 @@ class Backtester:
                 min_sentiment = getattr(self.config.backtest, "MIN_MARKET_SENTIMENT", 30)
                 if self._day_sentiment < min_sentiment:
                     self.progress.skip_day(f"Low sentiment ({self._day_sentiment:.0f})")
-                    self.logger.info(
+                    self.logger.info(  # noqa: G004
                         f"SKIP: Low market sentiment "
                         f"({self._day_sentiment:.1f} < {min_sentiment})"
                     )
@@ -395,7 +395,7 @@ class Backtester:
                 self.progress.complete_day()
                 
             except Exception as e:
-                self.logger.exception(f"Error processing {cur_day.date()}: {e}")
+                self.logger.exception("Error processing %s: %s", cur_day.date(), e)
                 self.progress.set_step("ERROR", str(e)[:40])
                 # Continue to next day instead of crashing
                 continue
@@ -518,7 +518,7 @@ class Backtester:
         if not diags:
             return
         
-        self.logger.info(f"Exporting {len(diags)} diagnostic records...")
+        self.logger.info("Exporting %d diagnostic records...", len(diags))
         diag_df = pd.DataFrame(diags)
         
         # Filter out __DAY__ summary rows
@@ -526,7 +526,7 @@ class Backtester:
         diag_df = diag_df[diag_df['symbol'] != '__DAY__'].copy()
         removed_count = original_count - len(diag_df)
         if removed_count > 0:
-            self.logger.info(f"Removed {removed_count} __DAY__ summary rows")
+            self.logger.info("Removed %d __DAY__ summary rows", removed_count)
         
         # NOTE: NEW: Calculate missed winner metrics
         self.logger.info("Calculating missed winner probability scores...")
@@ -548,69 +548,69 @@ class Backtester:
         out_fp = self.reports_dir / "backtest_candidates.csv"
         try:
             diag_df.to_csv(out_fp, index=False)
-            self.logger.info(f"✓ Diagnostics exported: {out_fp}")
+            self.logger.info("✓ Diagnostics exported: %s", out_fp)
             
             # Log column summary
-            self.logger.info(f"  • Total rows: {len(diag_df):,}")
-            self.logger.info(f"  • Total columns: {len(diag_df.columns)}")
+            self.logger.info("  • Total rows: %s", f"{len(diag_df):,}")
+            self.logger.info("  • Total columns: %d", len(diag_df.columns))
             
             # Log rejection breakdown
             if 'rejected' in diag_df.columns:
                 reject_count = diag_df['rejected'].sum()
                 entered_count = (diag_df['phase'] == 'entered').sum()
                 exited_count = (diag_df['phase'] == 'exited').sum()
-                self.logger.info(f"  • Phase breakdown:")
-                self.logger.info(f"    - Rejected: {reject_count}")
-                self.logger.info(f"    - Entered: {entered_count}")
-                self.logger.info(f"    - Exited: {exited_count}")
+                self.logger.info("  • Phase breakdown:")
+                self.logger.info("    - Rejected: %s", reject_count)
+                self.logger.info("    - Entered: %s", entered_count)
+                self.logger.info("    - Exited: %s", exited_count)
             
             # Log missed winner stats
             if 'likely_missed_winner' in diag_df.columns:
                 missed_winners = diag_df['likely_missed_winner'].sum()
                 if missed_winners > 0:
-                    self.logger.info(f"  • Likely missed winners: {missed_winners}")
+                    self.logger.info("  • Likely missed winners: %s", missed_winners)
                     avg_similarity = diag_df[diag_df['likely_missed_winner']]['similarity_to_winners'].mean()
-                    self.logger.info(f"    - Avg similarity score: {avg_similarity:.1f}")
+                    self.logger.info("    - Avg similarity score: %.1f", avg_similarity)
             
         except Exception as e:
-            self.logger.error(f"Failed to export diagnostics: {e}")
+            self.logger.error("Failed to export diagnostics: %s", e, exc_info=True)
         
         # NOTE: Export gate impact matrix to reports directory
         if not gate_impact_df.empty:
             gate_fp = self.reports_dir / "backtest_gate_impact.csv"
             try:
                 gate_impact_df.to_csv(gate_fp, index=False)
-                self.logger.info(f"✓ Gate impact matrix exported: {gate_fp}")
-                self.logger.info(f"  • Total gates analyzed: {len(gate_impact_df)}")
+                self.logger.info("✓ Gate impact matrix exported: %s", gate_fp)
+                self.logger.info("  • Total gates analyzed: %d", len(gate_impact_df))
                 
                 # Log top impactful gates
                 top_gates = gate_impact_df.nlargest(3, 'count')
-                self.logger.info(f"  • Top gates by trade count:")
+                self.logger.info("  • Top gates by trade count:")
                 for _, row in top_gates.iterrows():
-                    self.logger.info(
+                    self.logger.info(  # noqa: G004
                         f"    - {row['gate']}: {row['count']} trades, "
                         f"{row['winner_like_pct']:.1f}% winner-like, "
                         f"est. value: ${row['est_net_value']:.2f}"
                     )
             except Exception as e:
-                self.logger.error(f"Failed to export gate impact: {e}")
+                self.logger.error("Failed to export gate impact: %s", e, exc_info=True)
         
         # NOTE: Export false negative signatures to reports directory
         if not false_negatives_df.empty:
             fn_fp = self.reports_dir / "backtest_false_negatives.csv"
             try:
                 false_negatives_df.to_csv(fn_fp, index=False)
-                self.logger.info(f"✓ False negative signatures exported: {fn_fp}")
-                self.logger.info(f"  • Total false negatives: {len(false_negatives_df)}")
+                self.logger.info("✓ False negative signatures exported: %s", fn_fp)
+                self.logger.info("  • Total false negatives: %d", len(false_negatives_df))
                 
                 # Log common rejection reasons for false negatives
                 if 'reason' in false_negatives_df.columns:
                     top_reasons = false_negatives_df['reason'].value_counts().head(3)
-                    self.logger.info(f"  • Top rejection reasons:")
+                    self.logger.info("  • Top rejection reasons:")
                     for reason, count in top_reasons.items():
-                        self.logger.info(f"    - {reason}: {count}")
+                        self.logger.info("    - %s: %s", reason, count)
             except Exception as e:
-                self.logger.error(f"Failed to export false negatives: {e}")
+                self.logger.error("Failed to export false negatives: %s", e, exc_info=True)
         
         # NOTE: NEW: Export daily performance CSV
         self.logger.info("Generating daily performance CSV...")
@@ -625,18 +625,18 @@ class Backtester:
                 output_path=str(daily_perf_fp)
             )
             
-            self.logger.info(f"✓ Daily performance exported: {daily_perf_fp}")
-            self.logger.info(f"  • Total days: {len(results.get('equity_curve', []))}")
+            self.logger.info("✓ Daily performance exported: %s", daily_perf_fp)
+            self.logger.info("  • Total days: %d", len(results.get('equity_curve', [])))
             
             # Log summary stats
             if results.get('equity_curve'):
                 total_days = len(results['equity_curve'])
                 trades_total = len(results.get('trades', []))
                 avg_trades_per_day = trades_total / total_days if total_days > 0 else 0
-                self.logger.info(f"  • Average trades per day: {avg_trades_per_day:.2f}")
+                self.logger.info("  • Average trades per day: %.2f", avg_trades_per_day)
                 
         except Exception as e:
-            self.logger.error(f"Failed to export daily performance: {e}")
+            self.logger.error("Failed to export daily performance: %s", e, exc_info=True)
 
     def _log_final_summary(
         self, 
@@ -654,16 +654,16 @@ class Backtester:
         self.logger.info("=" * 80)
         self.logger.info("BACKTEST COMPLETE")
         self.logger.info("=" * 80)
-        self.logger.info(f"Total time: {total_elapsed:.0f}s ({total_elapsed/60:.1f}m)")
-        self.logger.info(f"Days processed: {day_idx}")
-        self.logger.info(f"  • Trading days: {trading_days_count}")
-        self.logger.info(f"  • Skipped days: {skipped_days_count}")
-        self.logger.info(f"Total trades: {stats.get('total_trades', 0)}")
-        self.logger.info(f"Win rate: {stats.get('win_rate', 0):.1f}%")
-        self.logger.info(f"Total return: {stats.get('total_return', 0):.2f}%")
-        self.logger.info(f"Max drawdown: {stats.get('max_drawdown', 0):.2f}%")
-        self.logger.info(f"Profit factor: {stats.get('profit_factor', 0):.2f}")
-        self.logger.info(f"Sharpe ratio: {stats.get('sharpe_ratio', 0):.2f}")
+        self.logger.info("Total time: %.0fs (%.1fm)", total_elapsed, total_elapsed/60)
+        self.logger.info("Days processed: %d", day_idx)
+        self.logger.info("  • Trading days: %d", trading_days_count)
+        self.logger.info("  • Skipped days: %d", skipped_days_count)
+        self.logger.info("Total trades: %s", stats.get('total_trades', 0))
+        self.logger.info("Win rate: %.1f%%", stats.get('win_rate', 0))
+        self.logger.info("Total return: %.2f%%", stats.get('total_return', 0))
+        self.logger.info("Max drawdown: %.2f%%", stats.get('max_drawdown', 0))
+        self.logger.info("Profit factor: %.2f", stats.get('profit_factor', 0))
+        self.logger.info("Sharpe ratio: %.2f", stats.get('sharpe_ratio', 0))
         self.logger.info("=" * 80)
 
     def _init_results(self, initial_capital: float) -> Dict:

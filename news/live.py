@@ -62,7 +62,7 @@ class NewsIntegrationLive:
             'recent_count': len(recent_news),
             'news_items': news_items[:5]
         }
-        self.logger.info(f"News analyzed {symbol}: has_catalyst={result['has_catalyst']} strength={result['catalyst_strength']} type={result['catalyst_type']}")
+        self.logger.info(f"News analyzed {symbol}: has_catalyst={result['has_catalyst']} strength={result['catalyst_strength']} type={result['catalyst_type']}")  # noqa: G004
         return result
 
     def get_news_for_symbol(self, symbol: str) -> List[Dict]:
@@ -89,7 +89,7 @@ class NewsIntegrationLive:
 
         self._news_cache[symbol] = deduped
         self._cache_expiry[symbol] = datetime.now(timezone.utc) + timedelta(minutes=15)
-        self.logger.info(f"Fetched news for {symbol}: {len(deduped)} items")
+        self.logger.info("Fetched news for %s: %d items", symbol, len(deduped))
         return deduped
 
     def _fetch_newsapi(self, symbol: str) -> List[Dict]:
@@ -106,7 +106,7 @@ class NewsIntegrationLive:
             }
             resp = requests.get(self.NEWSAPI_ENDPOINT, params=params, timeout=self.REQUEST_TIMEOUT)
             if resp.status_code != 200:
-                self.logger.debug(f"NewsAPI non-200 {resp.status_code}: {resp.text[:200]}")
+                self.logger.debug("NewsAPI non-200 %s: %s", resp.status_code, resp.text[:200])
                 return []
             data = resp.json()
             articles = data.get('articles', []) or []
@@ -127,7 +127,7 @@ class NewsIntegrationLive:
                 })
             return out
         except Exception as e:
-            self.logger.debug(f"NewsAPI error for {symbol}: {e}")
+            self.logger.debug("NewsAPI error for %s: %s", symbol, e)
             return []
 
     def _fetch_alpha_vantage_news(self, symbol: str) -> List[Dict]:
@@ -141,11 +141,11 @@ class NewsIntegrationLive:
             }
             resp = requests.get(self.ALPHAV_ENDPOINT, params=params, timeout=self.REQUEST_TIMEOUT)
             if resp.status_code != 200:
-                self.logger.debug(f"AlphaVantage non-200 {resp.status_code}: {resp.text[:200]}")
+                self.logger.debug("AlphaVantage non-200 %s: %s", resp.status_code, resp.text[:200])
                 return []
             data = resp.json()
             if any(k in data for k in ('Note', 'Information', 'Error Message')):
-                self.logger.debug(f"AlphaVantage message for {symbol}: {data}")
+                self.logger.debug("AlphaVantage message for %s: %s", symbol, data)
                 return []
             feed = data.get('feed', []) or []
             results = []
@@ -168,7 +168,7 @@ class NewsIntegrationLive:
                 })
             return results
         except Exception as e:
-            self.logger.debug(f"AlphaVantage error for {symbol}: {e}")
+            self.logger.debug("AlphaVantage error for %s: %s", symbol, e)
             return []
 
     def _scrape_financial_sites(self, symbol: str) -> List[Dict]:
@@ -207,7 +207,7 @@ class NewsIntegrationLive:
                         'catalyst_type': self._identify_catalyst(title)
                     })
             except Exception as e:
-                self.logger.debug(f"Scrape error {site['source']} {symbol}: {e}")
+                self.logger.debug("Scrape error %s %s: %s", site['source'], symbol, e)
         return items
 
     def _identify_catalyst(self, text: str) -> str:

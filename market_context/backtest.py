@@ -3,6 +3,7 @@
 # =====================================================
 
 from datetime import datetime
+import warnings
 import pandas as pd
 from typing import Dict, Optional
 import os
@@ -71,7 +72,6 @@ class BacktestMarketContext:
             df['date'] = pd.to_datetime(df['Date'], format="%m/%d/%y").dt.normalize()
         except Exception:
             self.logger.warning("Date format inference for %s", name)
-            import warnings
             with warnings.catch_warnings():
                 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
                 df['date'] = pd.to_datetime(df['Date']).dt.normalize()
@@ -114,10 +114,17 @@ class BacktestMarketContext:
             return self.market_indicators
 
     def _spy_trend(self, spy: pd.DataFrame) -> Dict:
+        return self._index_trend(spy)
+
+    def _rut_trend(self, rut: pd.DataFrame) -> Dict:
+        return self._index_trend(rut)
+
+    def _index_trend(self, df: pd.DataFrame) -> Dict:
+        """Compute SMA-based trend and momentum for any index DataFrame."""
         mc = self.config.market_context
-        if spy is None or spy.empty or len(spy) < mc.SMA_SLOW:
+        if df is None or df.empty or len(df) < mc.SMA_SLOW:
             return {'trend': 'unknown', 'strength': 0, 'momentum': 0}
-        s = spy.copy()
+        s = df.copy()
         s['sma_fast'] = s['Close'].rolling(mc.SMA_FAST).mean()
         s['sma_slow'] = s['Close'].rolling(mc.SMA_SLOW).mean()
         current = float(s['Close'].iloc[-1])
@@ -132,27 +139,6 @@ class BacktestMarketContext:
         else:
             trend, strength = 'neutral', 50.0
         momentum = float((s['Close'].iloc[-1] / s['Close'].iloc[-mc.SMA_FAST] - 1.0) * 100.0) if len(s) >= mc.SMA_FAST + 1 else 0.0
-        return {'trend': trend, 'strength': strength, 'momentum': momentum, 'price': current, 'sma_5': sma_f, 'sma_20': sma_s}
-
-    def _rut_trend(self, rut: pd.DataFrame) -> Dict:
-        mc = self.config.market_context
-        if rut is None or rut.empty or len(rut) < mc.SMA_SLOW:
-            return {'trend': 'unknown', 'strength': 0, 'momentum': 0}
-        r = rut.copy()
-        r['sma_fast'] = r['Close'].rolling(mc.SMA_FAST).mean()
-        r['sma_slow'] = r['Close'].rolling(mc.SMA_SLOW).mean()
-        current = float(r['Close'].iloc[-1])
-        sma_f = float(r['sma_fast'].iloc[-1])
-        sma_s = float(r['sma_slow'].iloc[-1])
-        if current > sma_f > sma_s:
-            trend = 'bullish'
-            strength = min(100.0, ((current / sma_s - 1.0) * 100.0) * 10.0)
-        elif current < sma_f < sma_s:
-            trend = 'bearish'
-            strength = min(100.0, ((1.0 - current / sma_s) * 100.0) * 10.0)
-        else:
-            trend, strength = 'neutral', 50.0
-        momentum = float((r['Close'].iloc[-1] / r['Close'].iloc[-mc.SMA_FAST] - 1.0) * 100.0) if len(r) >= mc.SMA_FAST + 1 else 0.0
         return {'trend': trend, 'strength': strength, 'momentum': momentum, 'price': current, 'sma_5': sma_f, 'sma_20': sma_s}
 
     def _vix_level(self, vix: pd.DataFrame) -> Dict:
@@ -228,8 +214,8 @@ class BacktestMarketContext:
 
             bars = data_handler.get_intraday_bars(symbol, start=start, end=end)
             if bars is None or bars.empty:
-                self.logger.warning(f"No intraday data found for {symbol} on {session_date}.")
+                self.logger.warning("No intraday data found for %s on %s.", symbol, session_date)
             return bars
         except Exception as e:
-            self.logger.error(f"Error retrieving intraday bars for {symbol} on {session_date}: {e}")
+            self.logger.error("Error retrieving intraday bars for %s on %s: %s", symbol, session_date, e, exc_info=True)
             return pd.DataFrame()

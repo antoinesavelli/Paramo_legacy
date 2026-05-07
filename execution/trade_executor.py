@@ -238,13 +238,13 @@ class TradeExecutor:
         
         if is_reentry:
             self.reentry_history[symbol] = self.reentry_history.get(symbol, 0) + 1
-            self.logger.info(
+            self.logger.info(  # noqa: G004
                 f"RE-ENTRY #{self.reentry_history[symbol]} for {symbol}: "
                 f"{position_size} shares @ ${filled_price:.2f}, "
                 f"stop=${stop_price:.2f}, max_hold={self.config.risk.MAX_HOLD_TIME_MINUTES}min"
             )
         else:
-            self.logger.info(
+            self.logger.info(  # noqa: G004
                 f"Entry for {symbol}: {position_size} shares @ ${filled_price:.2f}, "
                 f"stop=${stop_price:.2f}, max_hold={self.config.risk.MAX_HOLD_TIME_MINUTES}min"
             )
@@ -263,7 +263,7 @@ class TradeExecutor:
                 try:
                     self.api.cancel_order(trade['stop_order_id'])
                 except Exception as e:
-                    self.logger.warning(f"Failed to cancel stop for {symbol}: {e}")
+                    self.logger.warning("Failed to cancel stop for %s: %s", symbol, e, exc_info=True)
             
             # Execute market exit
             exit_order = place_order(
@@ -298,7 +298,7 @@ class TradeExecutor:
                 self.trade_history.append(trade_record)
                 del self.active_trades[symbol]
                 
-                self.logger.info(
+                self.logger.info(  # noqa: G004
                     f"EXIT {symbol}: ${exit_price:.2f} | "
                     f"P&L: ${pnl:.2f} ({pnl_pct:+.2f}%) | "
                     f"Reason: {reason}"
@@ -325,7 +325,7 @@ class TradeExecutor:
             try:
                 self._update_position(symbol)
             except Exception as e:
-                self.logger.error(f"Error updating position for {symbol}: {e}")
+                self.logger.error("Error updating position for %s: %s", symbol, e, exc_info=True)
 
     def _update_position(self, symbol: str):
         """Update individual position"""
@@ -336,7 +336,7 @@ class TradeExecutor:
             quote = self.api.get_latest_quote(symbol)
             current_price = float(quote.ap)  # Ask price for exits
         except Exception as e:
-            self.logger.warning(f"Failed to get quote for {symbol}: {e}")
+            self.logger.warning("Failed to get quote for %s: %s", symbol, e, exc_info=True)
             return
         
         # Check time limit
@@ -383,17 +383,17 @@ class TradeExecutor:
 
                     if new_stop_order:
                         trade['stop_order_id'] = new_stop_order.id
-                        self.logger.info(
+                        self.logger.info(  # noqa: G004
                             f"Trailing stop updated for {symbol}: "
                             f"${old_stop:.2f} -> ${new_stop:.2f} "
                             f"(profit: {profit_pct:.2f}%)"
                         )
                 except Exception as e:
-                    self.logger.error(f"Failed to update trailing stop for {symbol}: {e}")
+                    self.logger.error("Failed to update trailing stop for %s: %s", symbol, e, exc_info=True)
 
     def close_all_positions(self):
         """Close all active positions"""
-        self.logger.info(f"Closing all positions ({len(self.active_trades)} active)")
+        self.logger.info("Closing all positions (%d active)", len(self.active_trades))
         for symbol in list(self.active_trades.keys()):
             self.execute_exit(symbol, reason="eod_close")
 

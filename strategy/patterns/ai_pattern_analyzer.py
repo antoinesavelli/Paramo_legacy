@@ -1,22 +1,37 @@
 # =====================================================
-# claude_pattern_analyzer.py - DEPRECATED
+# ai_pattern_analyzer.py - Ollama AI Pattern Analyzer
 # =====================================================
-# This module has been replaced by ai_pattern_analyzer.py which uses a
-# locally-hosted LLM via Ollama instead of the Anthropic Claude API.
+# Delegates OHLCV pattern analysis to a locally-hosted LLM via Ollama.
+# The analyzer satisfies the PatternAnalyzerProtocol, making it a
+# drop-in replacement for PatternAnalyzer.
 #
-# Backward-compat shim: re-exports AIPatternAnalyzer and AIAnalyzerError
-# under the old names so any code that still imports from here continues
-# to work without modification.
+# Model:   deepseek-r1:7b  (or any model served by the local Ollama instance)
+# Runtime: Ollama HTTP API at config.ai_analyzer.OLLAMA_BASE_URL
 # =====================================================
 
-from strategy.patterns.ai_pattern_analyzer import (  # noqa: F401
-    AIPatternAnalyzer as ClaudePatternAnalyzer,
-    AIAnalyzerError as ClaudeAnalyzerError,
-)
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime
+from typing import Dict, List, Optional
+
+import pandas as pd
+
+from utils.logging import get_logger
 
 
 # ---------------------------------------------------------------------------
-# System prompt (cached on the Anthropic side via cache_control)
+# Sentinel exception — caught by DualPatternAnalyzer for graceful fallback
+# ---------------------------------------------------------------------------
+
+class AIAnalyzerError(Exception):
+    """Raised on any unrecoverable AI API or response-parsing failure."""
+
+
+# ---------------------------------------------------------------------------
+# System prompt — describes the analysis task and required JSON schema.
+# Kept identical to the original so pattern behaviour is unchanged.
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """You are an expert intraday momentum trading analyst specialising in gap-and-go strategies on US equities.
@@ -101,31 +116,55 @@ Return ONLY the JSON object.
 
 
 # ---------------------------------------------------------------------------
-# ClaudePatternAnalyzer
+# Internal helpers
 # ---------------------------------------------------------------------------
 
-class ClaudePatternAnalyzer:
-    """
-    Drop-in replacement for PatternAnalyzer that delegates analysis to Claude.
+def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks emitted by deepseek-r1."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-    The system prompt is sent with ``cache_control: {"type": "ephemeral"}`` so
-    Anthropic caches it across calls, keeping per-call token cost minimal.
+
+def _extract_json_block(text: str) -> str:
+    """
+    Extract a JSON object from text that may contain markdown fences or
+    surrounding prose — common with local LLMs that ignore "only JSON" prompts.
+    """
+    # Try markdown fence first: ```json { ... } ```
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if match:
+        return match.group(1)
+    # Fall back to first { ... } block
+    match = re.search(r"(\{.*\})", text, re.DOTALL)
+    if match:
+        return match.group(1)
+    return text
+
+
+# ---------------------------------------------------------------------------
+# AIPatternAnalyzer
+# ---------------------------------------------------------------------------
+
+class AIPatternAnalyzer:
+    """
+    Drop-in replacement for PatternAnalyzer that delegates analysis to a
+    locally-hosted LLM via the Ollama HTTP API.
+
+    Satisfies PatternAnalyzerProtocol — no changes needed in calling code.
     """
 
     def __init__(self, config):
         self.config = config
-        self.logger = get_logger(__name__, component="claude_analyzer")
-        self._cfg = config.claude_analyzer
+        self.logger = get_logger(__name__, component="ai_analyzer")
+        self._cfg = config.ai_analyzer
 
-        # Lazy-import so the package is optional in environments that do not
-        # install it (e.g., pure backtesting without Claude).
+        # Lazy-import requests so environments without it surface a clear error.
         try:
-            import anthropic as _anthropic
-            self._anthropic = _anthropic
+            import requests as _requests
+            self._requests = _requests
         except ImportError as exc:
             raise ImportError(
-                "anthropic package is required for ClaudePatternAnalyzer. "
-                "Install it with: pip install anthropic"
+                "requests package is required for AIPatternAnalyzer. "
+                "Install it with: pip install requests"
             ) from exc
 
     # ------------------------------------------------------------------
@@ -140,34 +179,47 @@ class ClaudePatternAnalyzer:
         is_premarket: bool = False,
         gap_percent: Optional[float] = None,
     ) -> Dict:
-        """Call Claude API and return a result dict matching PatternAnalyzer output."""
+        """Call Ollama API and return a result dict matching PatternAnalyzer output."""
         if bars is None or bars.empty or len(bars) < 5:
-            raise ClaudeAnalyzerError(f"{symbol}: insufficient bars for Claude analysis")
+            raise AIAnalyzerError(f"{symbol}: insufficient bars for AI analysis")
 
         user_message = self._build_user_message(symbol, bars, is_premarket, gap_percent)
 
-        try:
-            client = self._anthropic.Anthropic()
-            response = client.messages.create(
-                model=self._cfg.MODEL,
-                max_tokens=1024,
-                timeout=self._cfg.TIMEOUT_SECONDS,
-                system=[
-                    {
-                        "type": "text",
-                        "text": _SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                messages=[{"role": "user", "content": user_message}],
-            )
-        except self._anthropic.APITimeoutError as exc:
-            raise ClaudeAnalyzerError(f"{symbol}: Claude API timeout — {exc}") from exc
-        except self._anthropic.APIError as exc:
-            raise ClaudeAnalyzerError(f"{symbol}: Claude API error — {exc}") from exc
+        url = f"{self._cfg.OLLAMA_BASE_URL}/api/chat"
+        payload = {
+            "model": self._cfg.MODEL,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            "stream": False,
+            "options": {"temperature": 0},  # deterministic output for trading
+        }
 
-        raw_text = response.content[0].text.strip()
-        return self._parse_response(raw_text, symbol, is_premarket, gap_percent)
+        try:
+            response = self._requests.post(
+                url,
+                json=payload,
+                timeout=self._cfg.TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+        except self._requests.Timeout as exc:
+            raise AIAnalyzerError(
+                f"{symbol}: Ollama API timeout after {self._cfg.TIMEOUT_SECONDS}s — {exc}"
+            ) from exc
+        except self._requests.RequestException as exc:
+            raise AIAnalyzerError(
+                f"{symbol}: Ollama API request failed ({url}) — {exc}"
+            ) from exc
+
+        try:
+            raw_text = response.json()["message"]["content"]
+        except (KeyError, ValueError) as exc:
+            raise AIAnalyzerError(
+                f"{symbol}: Unexpected Ollama response structure — {exc}"
+            ) from exc
+
+        return self._parse_response(raw_text.strip(), symbol, is_premarket, gap_percent)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -214,12 +266,17 @@ class ClaudePatternAnalyzer:
         is_premarket: bool,
         gap_percent: Optional[float],
     ) -> Dict:
-        """Parse Claude's JSON response into the standard result dict."""
+        """Parse the AI's response into the standard result dict."""
+        # deepseek-r1 wraps reasoning in <think> blocks before the answer.
+        cleaned = _strip_think_tags(raw_text)
+        # Local LLMs sometimes wrap JSON in markdown fences or add prose.
+        cleaned = _extract_json_block(cleaned)
+
         try:
-            data = json.loads(raw_text)
+            data = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise ClaudeAnalyzerError(
-                f"{symbol}: Claude returned non-JSON response — {exc}\n"
+            raise AIAnalyzerError(
+                f"{symbol}: AI returned non-JSON response — {exc}\n"
                 f"Raw (first 200 chars): {raw_text[:200]}"
             ) from exc
 
@@ -231,8 +288,8 @@ class ClaudePatternAnalyzer:
         }
         missing = required_keys - data.keys()
         if missing:
-            raise ClaudeAnalyzerError(
-                f"{symbol}: Claude response missing keys: {missing}"
+            raise AIAnalyzerError(
+                f"{symbol}: AI response missing keys: {missing}"
             )
 
         # Normalise / guarantee certain fields
@@ -242,9 +299,11 @@ class ClaudePatternAnalyzer:
         data["timestamp"] = data.get("timestamp") or datetime.now().isoformat()
 
         self.logger.info(
-            f"Claude analyzed {symbol}: valid={data['valid']} "
-            f"strength={data['pattern_strength']:.2f} "
-            f"min_threshold={data['min_score_threshold']:.1f} "
-            f"patterns={data['patterns_detected']}"
+            "AI analyzed %s: valid=%s strength=%.2f min_threshold=%.1f patterns=%s",
+            symbol,
+            data["valid"],
+            data["pattern_strength"],
+            data["min_score_threshold"],
+            data["patterns_detected"],
         )
         return data

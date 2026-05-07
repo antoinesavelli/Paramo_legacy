@@ -69,12 +69,12 @@ class LocalDataHandler:
         else:
             self._file_index = self._build_file_index()
         
-        logger.info(
+        logger.info(  # noqa: G004
             f"Indexed {len(self._file_index)} dates with "
             f"{sum(len(v) for v in self._file_index.values())} total symbols"
         )
         
-        logger.info(f"Cache: {self._day_cache_limit} days max")
+        logger.info("Cache: %d days max", self._day_cache_limit)
     
     def _load_or_build_cached_index(self) -> Dict[str, set]:
         """Load file index from cache or build and cache it."""
@@ -87,7 +87,7 @@ class LocalDataHandler:
             return index_data['file_index']
             
         except Exception as e:
-            logger.warning(f"Failed to load cached index: {e}")
+            logger.warning("Failed to load cached index: %s", e, exc_info=True)
             logger.info("Falling back to building index from scratch...")
             return self._build_file_index()
     
@@ -130,7 +130,7 @@ class LocalDataHandler:
         
         try:
             if not self.data_dir.exists():
-                logger.warning(f"Data directory does not exist: {self.data_dir}")
+                logger.warning("Data directory does not exist: %s", self.data_dir)
                 return index
             
             for year_dir in self.data_dir.iterdir():
@@ -160,20 +160,20 @@ class LocalDataHandler:
                                     successful_files += 1
                                     
                                     if successful_files % 50 == 0:
-                                        logger.info(f"  Progress: {successful_files} files indexed...")
+                                        logger.info("  Progress: %d files indexed...", successful_files)
                                 else:
-                                    logger.warning(f"File {file} has no valid symbols")
+                                    logger.warning("File %s has no valid symbols", file)
                                     corrupted_files += 1
                                     
                             except Exception as e:
-                                logger.error(f"Error reading {file}: {e}")
+                                logger.error("Error reading %s: %s", file, e, exc_info=True)
                                 corrupted_files += 1
             
-            logger.info(f"File indexing complete:")
-            logger.info(f"  • Total files: {total_files}")
-            logger.info(f"  • Successfully indexed: {successful_files}")
-            logger.info(f"  • Corrupted/skipped: {corrupted_files}")
-            logger.info(f"  • Unique dates: {len(index)}")
+            logger.info("File indexing complete:")
+            logger.info("  • Total files: %d", total_files)
+            logger.info("  • Successfully indexed: %d", successful_files)
+            logger.info("  • Corrupted/skipped: %d", corrupted_files)
+            logger.info("  • Unique dates: %d", len(index))
             
             if total_files > 0 and successful_files == 0:
                 logger.error("⚠️  All parquet files appear corrupted!")
@@ -239,8 +239,8 @@ class LocalDataHandler:
                     evicted_key, evicted_df = self._day_cache.popitem(last=False)
                     rows_freed = len(evicted_df)
                     del evicted_df  # Explicit cleanup
-                    logger.debug(f"Evicted day cache: {evicted_key} ({rows_freed:,} rows)")
-                
+                    logger.debug("Evicted day cache: %s (%s rows)", evicted_key, f"{rows_freed:,}")
+
                 self._day_cache[cache_key] = df
             else:
                 self._missing_days_cache.add(date_str)
@@ -311,7 +311,7 @@ class LocalDataHandler:
         Returns:
             DataFrame with OHLCV data
         """
-        logger.debug(f"Loading bars for {symbol} ({timeframe}) from {start} to {end}")
+        logger.debug("Loading bars for %s (%s) from %s to %s", symbol, timeframe, start, end)
 
         if start is None or end is None:
             return pd.DataFrame()
@@ -376,10 +376,10 @@ class LocalDataHandler:
                 uni = self._normalize_columns(uni)
                 if not uni.empty:
                     out = uni[['symbol']].dropna().drop_duplicates().reset_index(drop=True)
-                    logger.info(f"Loaded universe from file: {len(out)} symbols")
+                    logger.info("Loaded universe from file: %d symbols", len(out))
                     return out
         except Exception as e:
-            logger.warning(f"Could not load universe file: {e}")
+            logger.warning("Could not load universe file: %s", e, exc_info=True)
 
         if self._file_index:
             all_symbols = set()
@@ -388,7 +388,7 @@ class LocalDataHandler:
             
             if all_symbols:
                 df = pd.DataFrame({'symbol': sorted(all_symbols)})
-                logger.info(f"Built universe from file index: {len(df)} symbols")
+                logger.info("Built universe from file index: %d symbols", len(df))
                 return df
 
         logger.warning("No universe data available")
@@ -398,7 +398,7 @@ class LocalDataHandler:
         """Clear all cached data to free memory."""
         cache_size = len(self._day_cache)
         self._day_cache.clear()
-        logger.info(f"Cleared day cache ({cache_size} entries)")
+        logger.info("Cleared day cache (%d entries)", cache_size)
     
     def get_intraday_bars(self, symbol: str, start=None, end=None, timeframe: str = '1Min') -> pd.DataFrame:
         """Get intraday bar data for pattern analysis. Wraps get_bars for screener compatibility."""

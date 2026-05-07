@@ -25,7 +25,6 @@ from collections import defaultdict
 import logging
 import gc
 
-import logging
 from utils.logging import get_logger
 
 from data_handler.aggregates.aggregate_prefilter import AggregatePreFilter

@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from config.config import TradingConfig, ClaudeAnalyzerConfig
-from strategy.patterns.claude_pattern_analyzer import ClaudeAnalyzerError
+from config.config import TradingConfig, AIAnalyzerConfig
+from strategy.patterns.ai_pattern_analyzer import AIAnalyzerError
 from strategy.patterns.dual_pattern_analyzer import DualPatternAnalyzer
 
 
@@ -67,23 +67,23 @@ def _make_dual(
     is_backtest: bool = False,
 ) -> tuple[DualPatternAnalyzer, MagicMock, MagicMock]:
     cfg = replace(
-        TradingConfig().claude_analyzer,
+        TradingConfig().ai_analyzer,
         MODE=mode,
         CONSENSUS=consensus,
         ENABLED_IN_BACKTEST=enabled_in_backtest,
     )
-    config = replace(TradingConfig(), claude_analyzer=cfg)
+    config = replace(TradingConfig(), ai_analyzer=cfg)
 
     hc_mock = MagicMock()
-    claude_mock = MagicMock()
+    ai_mock = MagicMock()
 
     dual = DualPatternAnalyzer(
         hard_coded=hc_mock,
-        claude=claude_mock,
+        ai=ai_mock,
         config=config,
         is_backtest=is_backtest,
     )
-    return dual, hc_mock, claude_mock
+    return dual, hc_mock, ai_mock
 
 
 BARS = _make_bars()
@@ -119,37 +119,37 @@ class TestHardCodedOnlyMode:
 # Mode: claude_only
 # ---------------------------------------------------------------------------
 
-class TestClaudeOnlyMode:
-    def test_claude_result_returned(self):
-        dual, hc, claude = _make_dual(mode="claude_only")
-        claude.analyze_pattern.return_value = _claude_result(True)
+class TestAIOnlyMode:
+    def test_ai_result_returned(self):
+        dual, hc, ai = _make_dual(mode="ai_only")
+        ai.analyze_pattern.return_value = _claude_result(True)
 
         result = dual.analyze_pattern("TST", BARS, gap_percent=120.0)
 
-        claude.analyze_pattern.assert_called_once()
+        ai.analyze_pattern.assert_called_once()
         hc.analyze_pattern.assert_not_called()
         assert result["valid"] is True
 
     def test_fallback_to_hc_on_error(self):
-        dual, hc, claude = _make_dual(mode="claude_only")
-        claude.analyze_pattern.side_effect = ClaudeAnalyzerError("timeout")
+        dual, hc, ai = _make_dual(mode="ai_only")
+        ai.analyze_pattern.side_effect = AIAnalyzerError("timeout")
         hc.analyze_pattern.return_value = _hc_result(True)
 
         result = dual.analyze_pattern("TST", BARS, gap_percent=20.0)
 
         hc.analyze_pattern.assert_called_once()
         assert result["valid"] is True
-        assert "claude_fallback" in result.get("meta", {})
+        assert "ai_fallback" in result.get("meta", {})
 
-    def test_backtest_guard_skips_claude(self):
-        dual, hc, claude = _make_dual(
-            mode="claude_only", enabled_in_backtest=False, is_backtest=True
+    def test_backtest_guard_skips_ai(self):
+        dual, hc, ai = _make_dual(
+            mode="ai_only", enabled_in_backtest=False, is_backtest=True
         )
         hc.analyze_pattern.return_value = _hc_result(True)
 
         dual.analyze_pattern("TST", BARS, gap_percent=20.0)
 
-        claude.analyze_pattern.assert_not_called()
+        ai.analyze_pattern.assert_not_called()
         hc.analyze_pattern.assert_called_once()
 
 
@@ -194,25 +194,25 @@ class TestBothModeConsensus:
         result = self._run("primary_hard_coded", False, True)
         assert result["valid"] is False  # HC is the gate
 
-    def test_primary_hc_stores_claude_in_meta(self):
+    def test_primary_hc_stores_ai_in_meta(self):
         result = self._run("primary_hard_coded", True, True)
-        assert "claude" in result["meta"]
+        assert "ai" in result["meta"]
 
-    # primary_claude
-    def test_primary_claude_gates_validity(self):
-        result = self._run("primary_claude", True, False)
-        assert result["valid"] is False  # Claude is the gate
+    # primary_ai
+    def test_primary_ai_gates_validity(self):
+        result = self._run("primary_ai", True, False)
+        assert result["valid"] is False  # AI is the gate
 
-    def test_primary_claude_stores_hc_in_meta(self):
-        result = self._run("primary_claude", True, True)
+    def test_primary_ai_stores_hc_in_meta(self):
+        result = self._run("primary_ai", True, True)
         assert "hard_coded" in result["meta"]
 
     # Both modes store both raw results in meta
     def test_meta_contains_both_results(self):
-        for consensus in ("and", "or", "primary_hard_coded", "primary_claude"):
+        for consensus in ("and", "or", "primary_hard_coded", "primary_ai"):
             result = self._run(consensus, True, True)
             assert "hard_coded" in result["meta"]
-            assert "claude" in result["meta"]
+            assert "ai" in result["meta"]
 
 
 # ---------------------------------------------------------------------------
@@ -220,26 +220,26 @@ class TestBothModeConsensus:
 # ---------------------------------------------------------------------------
 
 class TestBacktestGuard:
-    def test_claude_never_called_in_backtest(self):
-        dual, hc, claude = _make_dual(
+    def test_ai_never_called_in_backtest(self):
+        dual, hc, ai = _make_dual(
             mode="both", enabled_in_backtest=False, is_backtest=True
         )
         hc.analyze_pattern.return_value = _hc_result(True)
 
         dual.analyze_pattern("TST", BARS, gap_percent=20.0)
 
-        claude.analyze_pattern.assert_not_called()
+        ai.analyze_pattern.assert_not_called()
 
-    def test_claude_called_when_enabled_in_backtest(self):
-        dual, hc, claude = _make_dual(
+    def test_ai_called_when_enabled_in_backtest(self):
+        dual, hc, ai = _make_dual(
             mode="both", enabled_in_backtest=True, is_backtest=True
         )
         hc.analyze_pattern.return_value = _hc_result(True)
-        claude.analyze_pattern.return_value = _claude_result(True)
+        ai.analyze_pattern.return_value = _claude_result(True)
 
         dual.analyze_pattern("TST", BARS, gap_percent=20.0)
 
-        claude.analyze_pattern.assert_called_once()
+        ai.analyze_pattern.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -247,49 +247,40 @@ class TestBacktestGuard:
 # ---------------------------------------------------------------------------
 
 class TestFallbackOnError:
-    def test_returns_hc_result_on_claude_error(self):
-        dual, hc, claude = _make_dual(mode="both", consensus="and")
+    def test_returns_hc_result_on_ai_error(self):
+        dual, hc, ai = _make_dual(mode="both", consensus="and")
         hc.analyze_pattern.return_value = _hc_result(True)
-        claude.analyze_pattern.side_effect = ClaudeAnalyzerError("API down")
+        ai.analyze_pattern.side_effect = AIAnalyzerError("API down")
 
         result = dual.analyze_pattern("TST", BARS, gap_percent=20.0)
 
         assert result["valid"] is True
-        assert result.get("meta", {}).get("claude_error") is True
+        assert result.get("meta", {}).get("ai_error") is True
 
 
 # ---------------------------------------------------------------------------
 # ClaudePatternAnalyzer output schema (mocked Anthropic client)
 # ---------------------------------------------------------------------------
 
-class TestClaudePatternAnalyzerSchema:
+class TestAIPatternAnalyzerSchema:
     def _make_analyzer(self, mock_response_text: str):
-        """Build a ClaudePatternAnalyzer with the Anthropic SDK fully mocked."""
-        from strategy.patterns.claude_pattern_analyzer import ClaudePatternAnalyzer
+        """Build an AIPatternAnalyzer with the requests library fully mocked."""
+        from strategy.patterns.ai_pattern_analyzer import AIPatternAnalyzer
 
         config = TradingConfig()
-        analyzer = ClaudePatternAnalyzer.__new__(ClaudePatternAnalyzer)
+        analyzer = AIPatternAnalyzer.__new__(AIPatternAnalyzer)
         analyzer.config = config
-        analyzer.is_backtest = False
         analyzer.logger = MagicMock()
-        analyzer._cfg = config.claude_analyzer
+        analyzer._cfg = config.ai_analyzer
 
-        import anthropic as _anthropic
-        analyzer._anthropic = _anthropic
-
-        # Build a minimal mock that walks the call chain:
-        # client.messages.create() → response.content[0].text
-        mock_content = MagicMock()
-        mock_content.text = mock_response_text
+        # Mock requests: POST → response.json()["message"]["content"]
         mock_response = MagicMock()
-        mock_response.content = [mock_content]
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-
-        analyzer._anthropic = MagicMock()
-        analyzer._anthropic.Anthropic.return_value = mock_client
-        analyzer._anthropic.APITimeoutError = _anthropic.APITimeoutError
-        analyzer._anthropic.APIError = _anthropic.APIError
+        mock_response.json.return_value = {"message": {"content": mock_response_text}}
+        mock_requests = MagicMock()
+        mock_requests.post.return_value = mock_response
+        mock_requests.Timeout = ConnectionError   # reuse a real exception class
+        mock_requests.RequestException = OSError
+        analyzer._requests = mock_requests
         return analyzer
 
     def test_all_required_keys_present(self):
@@ -326,16 +317,40 @@ class TestClaudePatternAnalyzerSchema:
         assert isinstance(result["valid"], bool)
         assert isinstance(result["pattern_strength"], float)
 
-    def test_invalid_json_raises_claude_error(self):
-        from strategy.patterns.claude_pattern_analyzer import ClaudeAnalyzerError
+    def test_invalid_json_raises_ai_error(self):
+        from strategy.patterns.ai_pattern_analyzer import AIAnalyzerError
         analyzer = self._make_analyzer("not json at all")
-        with pytest.raises(ClaudeAnalyzerError, match="non-JSON"):
+        with pytest.raises(AIAnalyzerError, match="non-JSON"):
             analyzer.analyze_pattern("TST", _make_bars(), gap_percent=20.0)
 
-    def test_missing_keys_raises_claude_error(self):
+    def test_missing_keys_raises_ai_error(self):
         import json
-        from strategy.patterns.claude_pattern_analyzer import ClaudeAnalyzerError
-        # Return JSON that is missing most required keys
+        from strategy.patterns.ai_pattern_analyzer import AIAnalyzerError
         analyzer = self._make_analyzer(json.dumps({"valid": True}))
-        with pytest.raises(ClaudeAnalyzerError, match="missing keys"):
+        with pytest.raises(AIAnalyzerError, match="missing keys"):
             analyzer.analyze_pattern("TST", _make_bars(), gap_percent=20.0)
+
+    def test_think_tags_stripped_before_parse(self):
+        """deepseek-r1 wraps reasoning in <think>...</think> — must be stripped."""
+        import json, datetime
+        payload = {
+            "valid": True, "symbol": "TST", "pattern_strength": 50.0,
+            "patterns_detected": [], "pattern_count": 0,
+            "min_score_threshold": 40.0, "gap_percent": None,
+            "step_ups": {"detected": False, "step_count": 0, "retention_rate": 0.0,
+                         "total_advance": 0.0, "strength": 0.0},
+            "parabolic": {"detected": False, "angle": 0.0, "acceleration": 0.0,
+                          "volume_multiplier": 0.0, "strength": 0.0, "angle_valid": False},
+            "breakout": {"detected": False, "breakout_level": 0.0, "range_size": 0.0,
+                         "volume_ratio": 0.0, "strength": 0.0},
+            "volume": {"volume_trend": "stable", "avg_volume": 0.0, "recent_volume": 0.0,
+                       "high_volume_correlation": 0.0, "strength": 0.0},
+            "support_resistance": {"support": [], "resistance": [], "current_price": 10.0,
+                                   "strength": 0.0},
+            "timestamp": datetime.datetime.now().isoformat(),
+            "is_premarket_analyzed": False,
+        }
+        wrapped = f"<think>some reasoning here...</think>\n{json.dumps(payload)}"
+        analyzer = self._make_analyzer(wrapped)
+        result = analyzer.analyze_pattern("TST", _make_bars(), gap_percent=None)
+        assert result["valid"] is True
