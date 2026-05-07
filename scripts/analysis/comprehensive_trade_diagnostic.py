@@ -15,9 +15,10 @@ from typing import Dict, List, Optional
 from collections import Counter, defaultdict
 from pathlib import Path
 
-# Add project root to path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, project_root)
+# Add repository root to path (scripts/analysis -> repo root)
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from config.loader import build_config
 from data_handler.local import LocalDataHandler
@@ -25,6 +26,7 @@ from data_handler.aggregates.aggregate_handler import AggregateDataHandler
 from strategy.patterns.pattern_analyzer import PatternAnalyzer
 from screener.helpers import BacktestRelativeVolumeCalculator
 from market_context.backtest import BacktestMarketContext
+from news.backtest import NewsIntegrationBacktest
 from utils.logging import get_logger
 
 
@@ -42,10 +44,11 @@ class ComprehensiveTradeDiagnostic:
 
         self.pattern_analyzer = PatternAnalyzer(config, self.data_handler)
 
-        agg_dir = Path(config.backtest.BASE_DATA_DIR) / "daily_aggregates"
+        agg_dir = Path(config.backtest.DAILY_AGGREGATES_DIR)
         self._agg_handler = AggregateDataHandler(str(agg_dir))
 
         self._rvol_calculator = BacktestRelativeVolumeCalculator(config, self.data_handler, self.logger)
+        self.news_integration = NewsIntegrationBacktest(config, data_dir=config.backtest.NEWS_DATA_DIR)
 
         try:
             self.market_context = BacktestMarketContext(config)
@@ -249,116 +252,108 @@ class ComprehensiveTradeDiagnostic:
         return stats
 
     def _analyze_screening_filters(self, day: datetime, gaps_df: Optional[pd.DataFrame]) -> Dict:
-        """Screening filters — mirrors UnifiedScreener.screen_symbols() gate order."""
+        """Screening filters aligned to UnifiedScreener pre-pattern flow."""
         if gaps_df is None or gaps_df.empty:
             return {'passed_stocks': [], 'filter_results': {}, 'message': 'No gaps to analyze'}
 
-        cfg_screening = self.config.screening
+        cfg = self.config.screening
         filter_results = {
             'initial': len(gaps_df),
             'after_gap_threshold': 0,
-            'after_price_range': 0,
-            'after_volume': 0,
-            'after_float_marketcap': 0,
+            'after_daily_volume': 0,
             'after_rvol': 0,
+            'after_fundamentals': 0,
             'market_context_blocked': False
         }
 
-        # Filter 1: Gap Threshold — positive only
-        min_gap = cfg_screening.MIN_GAP_PERCENT
+        min_gap = cfg.MIN_GAP_PERCENT
         after_gap = gaps_df[gaps_df['gap_percent'] >= min_gap].copy()
         filter_results['after_gap_threshold'] = len(after_gap)
         self.logger.info(f"  • [F1] Gap >= {min_gap}%: {filter_results['initial']} → {filter_results['after_gap_threshold']}")
 
-        # Filter 2: Price floor on aggregate close
-        after_price = after_gap[after_gap['last_price'] >= cfg_screening.MIN_PRICE]
-        filter_results['after_price_range'] = len(after_price)
-        self.logger.info(f"  • [F2] Price >= ${cfg_screening.MIN_PRICE:.2f}: {filter_results['after_gap_threshold']} → {filter_results['after_price_range']}")
-
-        # Filter 3: Daily Volume
-        min_daily_vol = cfg_screening.MIN_DAILY_VOLUME
-        after_volume = (
-            after_price[after_price['volume'] >= min_daily_vol]
-            if cfg_screening.ENABLE_DAILY_VOLUME_PRESCREEN
-            else after_price.copy()
+        after_volume = after_gap.copy()
+        if cfg.ENABLE_DAILY_VOLUME_PRESCREEN:
+            after_volume = after_volume[after_volume['volume'] >= cfg.MIN_DAILY_VOLUME]
+        filter_results['after_daily_volume'] = len(after_volume)
+        self.logger.info(
+            f"  • [F2] Daily Volume >= {cfg.MIN_DAILY_VOLUME:,} "
+            f"(enabled={cfg.ENABLE_DAILY_VOLUME_PRESCREEN}): "
+            f"{filter_results['after_gap_threshold']} → {filter_results['after_daily_volume']}"
         )
-        filter_results['after_volume'] = len(after_volume)
-        self.logger.info(f"  • [F3] Daily Volume >= {min_daily_vol:,} (enabled={cfg_screening.ENABLE_DAILY_VOLUME_PRESCREEN}): {filter_results['after_price_range']} → {filter_results['after_volume']}")
 
-        # Filter 4: Relative Volume (matches production gate order)
         after_rvol = after_volume.copy()
-        if cfg_screening.ENABLE_RELATIVE_VOLUME:
-            min_rvol = cfg_screening.MIN_RELATIVE_VOLUME
+        if cfg.ENABLE_RELATIVE_VOLUME:
+            min_rvol = cfg.MIN_RELATIVE_VOLUME
+            max_rvol_checks = min(
+                len(after_rvol),
+                self.config.backtest.MAX_CANDIDATES_PER_DAY * 2
+            )
+            top_symbols = after_rvol.head(max_rvol_checks)['symbol'].tolist()
             try:
-                symbols = after_volume['symbol'].tolist()
-                rel_vols = self._rvol_calculator.calculate_batch(symbols, day)
-                if rel_vols:
-                    after_rvol = after_volume.copy()
-                    after_rvol['relative_volume'] = after_rvol['symbol'].map(rel_vols).fillna(0.0)
-                    after_rvol = after_rvol[after_rvol['relative_volume'] >= min_rvol]
-                else:
-                    self.logger.warning("  • [F4] RVOL enabled but calculator returned no data — filter skipped")
+                rel_vols = self._rvol_calculator.calculate_batch(top_symbols, day)
+                after_rvol['relative_volume'] = after_rvol['symbol'].map(rel_vols).fillna(0.0)
+                after_rvol = after_rvol[after_rvol['relative_volume'] >= min_rvol]
             except Exception as e:
-                self.logger.warning(f"  • [F4] RVOL calculation error: {e} — filter skipped")
-            self.logger.info(f"  • [F4] Relative Volume >= {min_rvol}x: {filter_results['after_volume']} → {len(after_rvol)}")
+                self.logger.warning(f"  • [F3] RVOL calculation error: {e} — filter skipped")
+            self.logger.info(f"  • [F3] Relative Volume >= {min_rvol}x: {filter_results['after_daily_volume']} → {len(after_rvol)}")
         else:
-            self.logger.info("  • [F4] Relative Volume (disabled)")
+            self.logger.info("  • [F3] Relative Volume (disabled)")
         filter_results['after_rvol'] = len(after_rvol)
 
-        # Filter 5: Float & Marketcap
         after_fundamentals = after_rvol.copy()
-        if cfg_screening.ENABLE_FLOAT_FILTER or cfg_screening.ENABLE_MARKETCAP_FILTER:
-            try:
-                day_agg = self._agg_handler.get_day_aggregates(day)
-                if day_agg is not None and not day_agg.empty:
-                    agg_lookup = day_agg.set_index('symbol')
+        if cfg.ENABLE_FLOAT_FILTER or cfg.ENABLE_MARKETCAP_FILTER:
+            day_agg = self._agg_handler.get_day_aggregates(day)
+            if day_agg is not None and not day_agg.empty:
+                lookup = day_agg.set_index('symbol')
 
-                    def passes_fundamentals(symbol):
-                        if symbol not in agg_lookup.index:
-                            return True
-                        row = agg_lookup.loc[symbol]
-                        if cfg_screening.ENABLE_FLOAT_FILTER and 'float' in row:
-                            f = row['float']
-                            if pd.notna(f) and (f < cfg_screening.MIN_FLOAT or f > cfg_screening.MAX_FLOAT):
-                                return False
-                        if cfg_screening.ENABLE_MARKETCAP_FILTER and 'marketcap' in row:
-                            mc = row['marketcap']
-                            if pd.notna(mc) and mc > cfg_screening.MAX_MARKETCAP:
-                                return False
-                        return True
+                def passes_fundamentals(symbol: str) -> bool:
+                    if symbol not in lookup.index:
+                        return False
+                    row = lookup.loc[symbol]
+                    if cfg.ENABLE_FLOAT_FILTER:
+                        if 'float' not in row or pd.isna(row['float']) or row['float'] > cfg.MAX_FLOAT:
+                            return False
+                    if cfg.ENABLE_MARKETCAP_FILTER:
+                        if 'marketcap' not in row or pd.isna(row['marketcap']) or row['marketcap'] > cfg.MAX_MARKETCAP:
+                            return False
+                    return True
 
-                    after_fundamentals = after_rvol[after_rvol['symbol'].apply(passes_fundamentals)]
-            except Exception as e:
-                self.logger.warning(f"  • Fundamental filter error: {e} — skipping")
-        filter_results['after_float_marketcap'] = len(after_fundamentals)
-        self.logger.info(f"  • [F5] Float/Marketcap (enabled={cfg_screening.ENABLE_FLOAT_FILTER or cfg_screening.ENABLE_MARKETCAP_FILTER}): {filter_results['after_rvol']} → {filter_results['after_float_marketcap']}")
+                after_fundamentals = after_rvol[after_rvol['symbol'].apply(passes_fundamentals)]
+            else:
+                self.logger.warning("  • [F4] Fundamental filters enabled but aggregate data unavailable")
+        filter_results['after_fundamentals'] = len(after_fundamentals)
+        self.logger.info(
+            f"  • [F4] Float/Marketcap (enabled={cfg.ENABLE_FLOAT_FILTER or cfg.ENABLE_MARKETCAP_FILTER}): "
+            f"{filter_results['after_rvol']} → {filter_results['after_fundamentals']}"
+        )
 
-        # Filter 6: Market Context gate
         if self.market_context is not None:
             try:
                 self.market_context.update_market_context(day)
                 score = self.market_context.market_indicators.get('market_score', 0)
                 env = self.market_context.market_indicators.get('trading_environment', 'unknown')
                 if not self.market_context.should_trade():
-                    self.logger.warning(f"  • [F6] Market Context BLOCKED — score={score:.1f}, env={env}")
+                    self.logger.warning(f"  • [F5] Market Context BLOCKED — score={score:.1f}, env={env}")
                     filter_results['market_context_blocked'] = True
                     return {'passed_stocks': [], 'filter_results': filter_results}
-                self.logger.info(f"  • [F6] Market Context OK — score={score:.1f}, env={env}")
+                self.logger.info(f"  • [F5] Market Context OK — score={score:.1f}, env={env}")
             except Exception as e:
-                self.logger.warning(f"  • [F6] Market Context error: {e} — not gating")
+                self.logger.warning(f"  • [F5] Market Context error: {e} — not gating")
         else:
-            self.logger.info("  • [F6] Market Context (not available — skipped)")
+            self.logger.info("  • [F5] Market Context (not available — skipped)")
 
         passed_stocks = after_fundamentals.to_dict('records')
         if passed_stocks:
             top2 = sorted(passed_stocks, key=lambda x: x['gap_percent'], reverse=True)[:2]
-            self.logger.info(f"  • {len(passed_stocks)} passed. Top 2: " +
-                             " | ".join(f"{s['symbol']} {s['gap_percent']:+.1f}%" for s in top2))
+            self.logger.info(
+                f"  • {len(passed_stocks)} passed. Top 2: "
+                + " | ".join(f"{s['symbol']} {s['gap_percent']:+.1f}%" for s in top2)
+            )
 
         return {'passed_stocks': passed_stocks, 'filter_results': filter_results}
 
     def _analyze_warmup_requirements(self, day: datetime, stocks: List[Dict]) -> Dict:
-        """Warmup + entry checks — mirrors UnifiedScreener.screen_symbols() per-symbol loop."""
+        """Warmup checks aligned to UnifiedScreener: bars/NaN/readiness only."""
         if not stocks:
             return {'passed_warmup': [], 'failed_warmup': [], 'bar_count_stats': {}, 'warmup_required': 0}
 
@@ -383,49 +378,42 @@ class ComprehensiveTradeDiagnostic:
         session_start_utc = session_start_et.tz_convert('UTC')
         session_end_utc = session_end_et.tz_convert('UTC')
 
-        # Analysis window gate
-        analysis_window_enabled = getattr(self.config.backtest, 'ANALYSIS_WINDOW_ENABLED', False)
-        analysis_window_start_utc = None
-        analysis_window_end_utc = None
-        if analysis_window_enabled:
-            w_start_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_START_ET', '06:00')
-            w_end_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_END_ET', '12:00')
-            ws = datetime.strptime(w_start_str, "%H:%M").time()
-            we = datetime.strptime(w_end_str, "%H:%M").time()
-            analysis_window_start_utc = pd.Timestamp(
-                day.replace(hour=ws.hour, minute=ws.minute), tz='US/Eastern'
-            ).tz_convert('UTC')
-            analysis_window_end_utc = pd.Timestamp(
-                day.replace(hour=we.hour, minute=we.minute), tz='US/Eastern'
-            ).tz_convert('UTC')
-            self.logger.info(f"  • Analysis Window: {w_start_str}–{w_end_str} ET (enabled)")
-        else:
-            self.logger.info("  • Analysis Window: disabled")
-
         self.logger.info(f"  • Session Start: {session_start_et.strftime('%H:%M %Z')} | Warmup: {warmup} bars | Min bars: {min_bars}")
         self.logger.info(f"  • Checking {len(stocks)} stocks...")
 
         passed_warmup = []
         failed_warmup = []
         bar_counts = []
+        news_probe_ts = session_start_utc + pd.Timedelta(minutes=warmup)
 
         for stock in stocks:
             symbol = stock['symbol']
+
+            if not getattr(self.config.backtest, 'IGNORE_CATALYST', True):
+                try:
+                    news = self.news_integration.check_news_approval(symbol, news_probe_ts)
+                except Exception as e:
+                    news = {'approved': False, 'reason': f'error:{type(e).__name__}'}
+
+                if not news.get('approved', False):
+                    reason = f"news_{news.get('reason', 'unknown')}"
+                    failed_warmup.append({'symbol': symbol, 'reason': reason, 'gap_percent': stock['gap_percent']})
+                    continue
+
             bars = self.data_handler.get_intraday_bars(symbol, start=session_start_utc, end=session_end_utc)
-            bar_count = len(bars) if not bars.empty else 0
+            bar_count = len(bars) if bars is not None and not bars.empty else 0
             bar_counts.append(bar_count)
 
-            if bars.empty:
+            if bars is None or bars.empty:
                 failed_warmup.append({'symbol': symbol, 'reason': 'empty_bars', 'bar_count': 0, 'gap_percent': stock['gap_percent']})
                 continue
 
             if bar_count < warmup:
-                failed_warmup.append({'symbol': symbol, 'reason': 'insufficient_warmup_bars', 'bar_count': bar_count, 'warmup_required': warmup, 'gap_percent': stock['gap_percent']})
+                failed_warmup.append({'symbol': symbol, 'reason': 'insufficient_bars_for_pattern', 'bar_count': bar_count, 'warmup_required': warmup, 'gap_percent': stock['gap_percent']})
                 continue
 
-            # NaN check before next-bar check — matches production gate order
             if bars.iloc[:warmup].isna().any().any():
-                failed_warmup.append({'symbol': symbol, 'reason': 'nan_in_warmup_bars',
+                failed_warmup.append({'symbol': symbol, 'reason': 'nan_in_pattern_window',
                                       'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
                 continue
 
@@ -437,37 +425,12 @@ class ComprehensiveTradeDiagnostic:
                 })
                 continue
 
-            bars_warm   = bars.iloc[:warmup]
-            signal_bar  = bars.iloc[warmup - 1]   # last bar pattern runs on
-            next_bar    = bars.iloc[warmup]        # first bar available for fill
-
-            entry_price = float(next_bar['open'])          # NOTE: fixed: was signal_bar['close']
-            entry_ts_raw = next_bar.get('timestamp', None) # NOTE: fixed: timestamp of fill bar
-
-            if entry_price < self.config.screening.MIN_PRICE:
-                failed_warmup.append({'symbol': symbol, 'reason': 'entry_price_below_min',
-                                      'entry_price': entry_price, 'bar_count': bar_count,
-                                      'gap_percent': stock['gap_percent']})
-                continue
-
-            # Analysis window check still uses fill bar's timestamp
-            if analysis_window_start_utc is not None:
-                if entry_ts_raw is not None:
-                    entry_ts = pd.Timestamp(entry_ts_raw)
-                    entry_ts = entry_ts.tz_localize('UTC') if entry_ts.tz is None else entry_ts.tz_convert('UTC')
-                    if entry_ts < analysis_window_start_utc or entry_ts >= analysis_window_end_utc:
-                        failed_warmup.append({'symbol': symbol, 'reason': 'outside_analysis_window',
-                                              'bar_count': bar_count, 'gap_percent': stock['gap_percent']})
-                        continue
-
             stock = stock.copy()
-            stock['bar_count']        = bar_count
-            stock['bars']             = bars
-            stock['bars_warm']        = bars_warm.copy()
-            stock['warmup']           = warmup
-            stock['entry_price']      = entry_price                        # next_bar open
-            stock['signal_bar_close'] = float(signal_bar['close'])         # audit: old behaviour
-            stock['entry_ts']         = pd.Timestamp(entry_ts_raw) if entry_ts_raw is not None else None
+            stock['bar_count'] = bar_count
+            stock['bars'] = bars
+            stock['bars_warm'] = bars.iloc[:warmup].copy()
+            stock['warmup'] = warmup
+            stock['signal_bar_close'] = float(bars.iloc[warmup - 1]['close'])
             passed_warmup.append(stock)
 
         fail_summary = Counter(f['reason'] for f in failed_warmup)
@@ -495,14 +458,34 @@ class ComprehensiveTradeDiagnostic:
             return {'valid_patterns': valid_patterns, 'failed_patterns': failed_patterns, 'failure_reasons': failure_reasons}
 
         is_premarket = self.config.session.PREMARKET_ENABLED
+        min_price = self.config.screening.MIN_PRICE
+        analysis_window_enabled = bool(getattr(self.config.backtest, 'ANALYSIS_WINDOW_ENABLED', False))
+        analysis_window_start_utc = None
+        analysis_window_end_utc = None
+        window_start_str = None
+        window_end_str = None
+        if analysis_window_enabled:
+            window_start_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_START_ET', '04:00')
+            window_end_str = getattr(self.config.backtest, 'ANALYSIS_WINDOW_END_ET', '16:00')
+            ws = datetime.strptime(window_start_str, "%H:%M").time()
+            we = datetime.strptime(window_end_str, "%H:%M").time()
+            analysis_window_start_utc = pd.Timestamp(
+                day.replace(hour=ws.hour, minute=ws.minute), tz='US/Eastern'
+            ).tz_convert('UTC')
+            analysis_window_end_utc = pd.Timestamp(
+                day.replace(hour=we.hour, minute=we.minute), tz='US/Eastern'
+            ).tz_convert('UTC')
+
         self.logger.info(f"  • Running pattern analysis on {len(stocks)} stocks...")
 
         for stock in stocks:
             symbol = stock['symbol']
             gap_percent = stock.get('gap_percent', None)
             try:
+                bars = stock.get('bars')
                 bars_warm = stock.get('bars_warm')
-                if bars_warm is None or bars_warm.empty:
+                warmup = int(stock.get('warmup', 0) or 0)
+                if bars_warm is None or bars_warm.empty or bars is None or bars.empty:
                     reason = 'no_bars_warm'
                     failed_patterns.append({**stock, 'reason': reason})
                     failure_reasons[reason] += 1
@@ -515,14 +498,7 @@ class ComprehensiveTradeDiagnostic:
                     gap_percent=gap_percent
                 )
 
-                if result.get('valid'):
-                    valid_patterns.append({
-                        **stock,
-                        'pattern_strength': result.get('pattern_strength'),
-                        'patterns_detected': result.get('patterns_detected'),  # FIX: was mismatched quote
-                        'min_score_threshold': result.get('min_score_threshold')
-                    })
-                else:
+                if not result.get('valid'):
                     reason = result.get('reason', 'pattern_invalid')
                     failed_patterns.append({
                         **stock,
@@ -531,6 +507,50 @@ class ComprehensiveTradeDiagnostic:
                         'min_score_threshold': result.get('min_score_threshold')
                     })
                     failure_reasons[reason] += 1
+                    continue
+
+                fsb_idx = int(result.get('first_signal_bar_idx', -1) or -1)
+                if fsb_idx >= 0 and fsb_idx + 1 < len(bars):
+                    fill_row = bars.iloc[fsb_idx + 1]
+                elif warmup < len(bars):
+                    fill_row = bars.iloc[warmup]
+                else:
+                    reason = 'no_next_bar_for_entry'
+                    failed_patterns.append({**stock, 'reason': reason})
+                    failure_reasons[reason] += 1
+                    continue
+
+                entry_price = float(fill_row['open'])
+                if entry_price < min_price:
+                    reason = 'price_out_of_range'
+                    failed_patterns.append({**stock, 'reason': reason, 'entry_price': entry_price, 'min_price': min_price})
+                    failure_reasons[reason] += 1
+                    continue
+
+                entry_ts = pd.Timestamp(fill_row['timestamp'])
+                entry_ts_utc = entry_ts.tz_localize('UTC') if entry_ts.tz is None else entry_ts.tz_convert('UTC')
+                if analysis_window_start_utc is not None and (
+                    entry_ts_utc < analysis_window_start_utc or entry_ts_utc >= analysis_window_end_utc
+                ):
+                    reason = 'outside_analysis_window'
+                    failed_patterns.append({
+                        **stock,
+                        'reason': reason,
+                        'entry_time_et': entry_ts_utc.tz_convert('US/Eastern').strftime('%H:%M:%S'),
+                        'window_start_et': window_start_str,
+                        'window_end_et': window_end_str
+                    })
+                    failure_reasons[reason] += 1
+                    continue
+
+                valid_patterns.append({
+                    **stock,
+                    'pattern_strength': result.get('pattern_strength'),
+                    'patterns_detected': result.get('patterns_detected'),
+                    'min_score_threshold': result.get('min_score_threshold'),
+                    'entry_price': entry_price,
+                    'entry_ts': entry_ts_utc,
+                })
 
             except Exception as e:
                 self.logger.error(f"  • Pattern error for {symbol}: {e}")
@@ -798,10 +818,9 @@ class ComprehensiveTradeDiagnostic:
                 'universe_total': s.get('universe', {}).get('total_universe', 0),
                 'gaps_total': s.get('gaps', {}).get('total_gaps', 0),
                 'after_gap_filter': fr.get('after_gap_threshold', 0),
-                'after_price_filter': fr.get('after_price_range', 0),
-                'after_volume_filter': fr.get('after_volume', 0),
-                'after_fundamentals_filter': fr.get('after_float_marketcap', 0),
+                'after_daily_volume_filter': fr.get('after_daily_volume', 0),
                 'after_rvol_filter': fr.get('after_rvol', 0),
+                'after_fundamentals_filter': fr.get('after_fundamentals', 0),
                 'market_context_blocked': fr.get('market_context_blocked', False),
                 'warmup_passed': len(s.get('warmup', {}).get('passed_warmup', [])),
                 'warmup_failed': len(s.get('warmup', {}).get('failed_warmup', [])),
@@ -834,19 +853,28 @@ class ComprehensiveTradeDiagnostic:
 # ---────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     import argparse
+    from run.backtest_engine import Backtester
 
     parser = argparse.ArgumentParser(description='Comprehensive Trade Diagnostic')
-    parser.add_argument('--start', default='2024-01-03', help='Start date YYYY-MM-DD')
-    parser.add_argument('--end',   default='2024-01-31', help='End date YYYY-MM-DD')
+    parser.add_argument('--start', default=None, help='Start date YYYY-MM-DD (default: config.backtest.START_DATE)')
+    parser.add_argument('--end', default=None, help='End date YYYY-MM-DD (default: config.backtest.END_DATE)')
+    parser.add_argument('--override', action='append', help='Config override key=value (repeatable)')
+    parser.add_argument('--no-env-layer', action='store_true', help='Disable environment variable override layer')
+    parser.add_argument('--skip-backtest-compare', action='store_true', help='Skip plain backtest comparison run')
     args = parser.parse_args()
 
-    config = build_config()
-    diagnostic = ComprehensiveTradeDiagnostic(config)
-    report_df = diagnostic.analyze_date_range(args.start, args.end)
+    config = build_config(
+        cli_overrides=args.override,
+        enable_env_layer=not args.no_env_layer,
+    )
+    start = args.start or config.backtest.START_DATE
+    end = args.end or config.backtest.END_DATE
 
-    # ── Timestamped report folder ─────────────────────────────────────────────
+    diagnostic = ComprehensiveTradeDiagnostic(config)
+    report_df = diagnostic.analyze_date_range(start, end)
+
     run_ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    reports_root = Path(config.backtest.BASE_DATA_DIR) / "reports" / f"diagnostic_{run_ts}"
+    reports_root = Path(config.system.REPORTS_DIR) / f"diagnostic_{run_ts}"
     reports_root.mkdir(parents=True, exist_ok=True)
 
     # 1. Daily funnel summary
@@ -886,12 +914,40 @@ if __name__ == '__main__':
             risk_rows.append({'date': ds['date'], **row})
     pd.DataFrame(risk_rows).to_csv(reports_root / "risk_rejections.csv", index=False)
 
-    print(f"\n✓ Reports saved to: {reports_root}")
-    print(f"   • daily_summary.csv      — {len(report_df)} days")
-    print(f"   • warmup_failures.csv    — {len(warmup_rows)} rejections")
-    print(f"   • pattern_failures.csv   — {len(pattern_rows)} rejections")
-    print(f"   • valid_patterns.csv     — {len(valid_rows)} passes")
-    print(f"   • config_snapshot.csv    — effective config at run time")
-    print(f"   • risk_rejections.csv    — {len(risk_rows)} rejections")
-    print()
-    print(report_df.to_string(index=False))
+    diagnostic_tradeable = int(report_df['tradeable'].sum()) if not report_df.empty else 0
+    plain_backtest_trades = None
+
+    if not args.skip_backtest_compare:
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        local_data_handler = LocalDataHandler(config, data_dir=config.backtest.DATA_DIR)
+        pattern_analyzer = PatternAnalyzer(config, local_data_handler)
+        bt = Backtester(config, local_data_handler, pattern_analyzer=pattern_analyzer)
+        bt_results = bt.run_backtest(start_dt, end_dt, initial_capital=config.backtest.INITIAL_CAPITAL)
+        plain_backtest_trades = int(bt_results.get('statistics', {}).get('total_trades', 0) or 0)
+
+    print(f"\nReports saved to: {reports_root}")
+    print(
+        f"Summary: days={len(report_df)}, tradeable_signals={diagnostic_tradeable}, "
+        f"warmup_rejections={len(warmup_rows)}, pattern_rejections={len(pattern_rows)}"
+    )
+
+    if plain_backtest_trades is not None:
+        print(
+            f"Backtest comparison: diagnostic_tradeable_signals={diagnostic_tradeable}, "
+            f"plain_backtest_trades={plain_backtest_trades}"
+        )
+        if diagnostic_tradeable > 0 and plain_backtest_trades == 0:
+            print(
+                "Reason hint: diagnostic counts screen/risk-passed candidates, while plain backtest "
+                "counts executed-and-closed trades after simulation gates."
+            )
+        elif diagnostic_tradeable == 0 and plain_backtest_trades == 0:
+            print(
+                "Reason hint: both flows found zero opportunities in this range; daily_summary.csv "
+                "shows where candidates are first filtered out."
+            )
+
+    if not report_df.empty:
+        print("Example daily rows (max 2):")
+        print(report_df.head(2).to_string(index=False))
